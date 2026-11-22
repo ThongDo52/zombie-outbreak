@@ -1,40 +1,29 @@
-# Builds the game with Vite and publishes it on GitHub Pages each time `main` is pushed.
+# Builds the game with Vite and publishes it to the `gh-pages` branch each time `main` is pushed.
 #
-# One-time setup in the repository on github.com:
-#   1. Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
-#   2. Settings -> Secrets and variables -> Actions -> "Variables" tab: add the VITE_ values from your .env
-#      (the contract addresses, and VITE_RELAY_URL once your relay runs). Every repository variable whose
-#      name starts with VITE_ is handed to the build.
+# One-time setup on github.com (after the first successful run has created the gh-pages branch):
+#   Settings -> Pages -> Build and deployment -> Source: "Deploy from a branch" -> Branch: gh-pages, folder: / (root).
+# Variables: Settings -> Secrets and variables -> Actions -> "Variables" tab. Every variable whose name starts
+# with VITE_ is handed to the build (contract addresses, VITE_RELAY_URL).
 #
-# Those values are baked into the public page. Never add a private key (DESCENT_OPERATOR_KEY) here or
-# anywhere in this file.
-#
-# GitHub Pages only serves files. The online relay and the Endless Descent server cannot run here: see
-# "Put the game on GitHub Pages" in README.md.
+# Those values are baked into the public page. Never add a private key (DESCENT_OPERATOR_KEY) here.
+# GitHub Pages only serves files: the online relay lives on Cloudflare (see docs/HUONG-DAN-CHOI-ONLINE.md).
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: ['main']
-  # also lets you start it by hand from the Actions tab
   workflow_dispatch:
 
-# what the built-in token may do: read the code, publish to Pages
+# the built-in token only needs to push the gh-pages branch
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# one deployment at a time; a newer push replaces one that is still running
 concurrency:
   group: 'pages'
   cancel-in-progress: true
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,9 +34,6 @@ jobs:
           bun-version-file: '.bun-version'
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v5
       - name: Settings from repository variables
         env:
           REPO_VARS: ${{ toJSON(vars) }}
@@ -55,14 +41,10 @@ jobs:
           echo "$REPO_VARS" | jq -r 'to_entries[] | select(.key | startswith("VITE_")) | select(.value != "") | "\(.key)=\(.value)"' > .env.production.local
           echo "Passed to the build: $(cut -d= -f1 .env.production.local | tr '\n' ' ')"
       - name: Build
-        env:
-          # "/<repository>" for https://<you>.github.io/<repository>/, empty for a custom domain
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: bun run build --base="$BASE_PATH/"
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        # the page lives at https://<you>.github.io/<repository>/
+        run: bun run build --base="/${{ github.event.repository.name }}/"
+      - name: Publish to the gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: './dist'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
