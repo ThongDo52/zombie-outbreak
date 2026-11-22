@@ -29,7 +29,7 @@ export function CoopLobby({ coop, progress, onBack }: { coop: CoopHandle; progre
   const busy = state.phase === 'connecting' || state.phase === 'signing'
 
   return (
-    <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 overflow-y-auto rounded-2xl bg-[#0B1210]/92 p-4 text-center text-white backdrop-blur-sm sm:p-6">
+    <div className="absolute inset-2 flex flex-col items-center gap-4 overflow-y-auto before:flex-1 after:flex-1 rounded-2xl bg-[#0B1210]/92 p-4 text-center text-white backdrop-blur-sm sm:p-6">
       {!room && (
         <button onClick={onBack} className="absolute left-3 top-3 flex min-h-11 items-center gap-1.5 rounded-full px-3 text-sm text-slate-300 hover:text-white">
           <ArrowLeft size={16} /> Back

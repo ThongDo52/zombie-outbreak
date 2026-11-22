@@ -5,6 +5,10 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import { spawn, type ChildProcess } from 'node:child_process'
 
 const COOP_PORT = Number(process.env.COOP_PORT ?? 5174)
+const COOP_PROXY = {
+  '/coop': { target: `ws://localhost:${COOP_PORT}`, ws: true },
+  '/relay': { target: `ws://localhost:${COOP_PORT}`, ws: true },
+}
 
 /** Starts the co-op game server next to the dev server and stops it when the dev server stops. */
 function coopServer(): Plugin {
@@ -59,9 +63,13 @@ export default defineConfig({
   server: {
     allowedHosts: true,
     cors: true,
-    // the co-op WebSocket goes through the dev server so the preview link carries it
-    proxy: {
-      '/coop': { target: `ws://localhost:${COOP_PORT}`, ws: true },
-    },
+    // the co-op WebSocket and the online relay go through the dev server, so the preview link (or a tunnel
+    // to this machine) carries them and friends on any network can join with nothing else to set up
+    proxy: COOP_PROXY,
+  },
+  // `vite preview` serves the built page the same way when the co-op server runs next to it (bun run coop)
+  preview: {
+    allowedHosts: true,
+    proxy: COOP_PROXY,
   },
 })

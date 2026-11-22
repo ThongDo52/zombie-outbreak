@@ -20,8 +20,6 @@ const HATCHERY: Chapter = {
   waves: 3,
   bossWaves: [3],
   count: 18,
-  newGun: 'shotgun',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer', 'launcher'],
   boss: { name: 'PLAGUE MOTHER', flesh: '#6E8A3C', aura: '120,255,60' },
   theme: {
     ground: '#1E2A20', patch: 'rgba(120,255,80,0.10)', patchKind: 'toxic',
@@ -49,8 +47,6 @@ const REACTOR: Chapter = {
   waves: 3,
   bossWaves: [3],
   count: 20,
-  newGun: 'rifle',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun'],
   boss: { name: 'STORM COLOSSUS', flesh: '#6A8AB8', aura: '120,200,255' },
   theme: {
     ground: '#1B2230', patch: 'rgba(120,180,255,0.12)', patchKind: 'ash',
@@ -78,8 +74,6 @@ const VAULT: Chapter = {
   waves: 3,
   bossWaves: [3],
   count: 22,
-  newGun: 'shotgun',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun', 'railgun'],
   boss: { name: 'CRYO TITAN', flesh: '#8FC4E8', aura: '140,220,255' },
   theme: {
     ground: '#8FA3B5', patch: 'rgba(255,255,255,0.35)', patchKind: 'snow',

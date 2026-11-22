@@ -6,6 +6,10 @@ interface Props {
   onFire: (down: boolean) => void
   skillLabel: string
   onSkill: () => void
+  /** The second class skill. */
+  skill2Label: string
+  onSkill2: () => void
+  onShop: () => void
   onSwitch: () => void
   onHeal: () => void
   onArmor: () => void
@@ -13,6 +17,8 @@ interface Props {
 
 const PAD = 'flex h-14 w-14 touch-none select-none items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white backdrop-blur active:bg-[#FF4B57]'
 const BTN = 'min-h-11 touch-none select-none rounded-full px-5 text-sm font-semibold active:scale-95'
+/** Skill names are two words: these buttons let them sit on two short lines, side by side, on a narrow phone. */
+const SKILL = 'min-h-11 flex-1 basis-0 touch-none select-none rounded-2xl border border-white/15 bg-white/10 px-2 text-xs font-semibold leading-tight text-white backdrop-blur active:scale-95'
 
 function Dir({ c, onMove, children }: { c: Control; onMove: Props['onMove']; children: React.ReactNode }) {
   return (
@@ -29,7 +35,7 @@ function Dir({ c, onMove, children }: { c: Control; onMove: Props['onMove']; chi
   )
 }
 
-export function TouchControls({ onMove, onFire, skillLabel, onSkill, onSwitch, onHeal, onArmor }: Props) {
+export function TouchControls({ onMove, onFire, skillLabel, onSkill, skill2Label, onSkill2, onShop, onSwitch, onHeal, onArmor }: Props) {
   return (
     <div className="flex items-end justify-between gap-4 md:hidden">
       <div className="grid grid-cols-3 gap-1.5">
@@ -51,8 +57,12 @@ export function TouchControls({ onMove, onFire, skillLabel, onSkill, onSwitch, o
           Fire (auto-aim)
         </button>
         <div className="flex gap-2">
+          <button className={SKILL} onPointerDown={onSkill}>{skillLabel}</button>
+          <button className={SKILL} onPointerDown={onSkill2}>{skill2Label}</button>
+        </div>
+        <div className="flex gap-2">
           <button className={`${BTN} flex-1 border border-white/15 bg-white/10 text-white backdrop-blur`} onPointerDown={onSwitch}>Swap</button>
-          <button className={`${BTN} flex-1 border border-white/15 bg-white/10 text-white backdrop-blur`} onPointerDown={onSkill}>{skillLabel}</button>
+          <button className={`${BTN} flex-1 bg-amber-400 text-[#0B1B3A]`} onPointerDown={onShop}>Shop</button>
         </div>
         <div className="flex gap-2">
           <button className={`${BTN} flex-1 bg-emerald-600/80 text-white`} onPointerDown={onHeal}>Heal</button>

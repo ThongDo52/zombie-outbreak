@@ -43,6 +43,9 @@ interface Props {
 const PRIMARY = 'flex min-h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[#0B1B3A] transition active:scale-95'
 const GHOST = 'flex min-h-11 items-center gap-2 rounded-full border border-white/30 px-6 text-sm font-semibold text-white transition active:scale-95'
 
+/** Boss names are stored in capitals for the boss bar; menus show them in title case. */
+const bossName = (name: string) => name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase())
+
 /** The run clock with how it stacks up against your best. */
 function TimeLine({ time, record, label }: { time: number; record: RecordResult | null; label: string }) {
   return (
@@ -66,12 +69,12 @@ export function ChapterOverlay({ status, summary, saved, best, progress, records
   const tier = DIFFICULTY[summary.difficulty]
 
   return (
-    <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 overflow-y-auto rounded-2xl bg-[#0B1210]/88 p-4 text-center text-white backdrop-blur-sm sm:p-6">
+    <div className="absolute inset-2 flex flex-col items-center gap-4 overflow-y-auto before:flex-1 after:flex-1 rounded-2xl bg-[#0B1210]/88 p-4 text-center text-white backdrop-blur-sm sm:p-6">
       {status === 'ready' && (
         <>
           <h2 className="font-display text-balance text-3xl font-bold tracking-[-0.03em] sm:text-4xl">Zombie Outbreak</h2>
           <p className="max-w-md text-pretty text-sm text-slate-300">
-            Fight through seven chapters, alone or with up to three friends. Every map is nastier than the last, and every chapter hides a new gun.
+            Fight through seven chapters, alone or with up to three friends. Pick a class, earn coins from every kill, and spend them in the shop (B) on that class's guns and upgrades.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-slate-300">
             {best > 0 && (
@@ -154,7 +157,7 @@ export function ChapterOverlay({ status, summary, saved, best, progress, records
                   </span>
                   <span className="font-display text-sm font-bold leading-tight">{c.name}</span>
                   <span className="text-[11px] text-slate-300">
-                    {survival ? 'Endless waves' : `${c.waves} waves · ${WEAPONS[c.newGun].label}`}
+                    {survival ? 'Endless waves' : `${c.waves} waves · ${bossName(c.boss.name)}`}
                   </span>
                   {(() => {
                     const r = records[survival ? survivalKey(i, difficulty) : storyKey(i, difficulty)]
@@ -245,7 +248,7 @@ export function ChapterOverlay({ status, summary, saved, best, progress, records
               <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-amber-200">Heavy weapon unlocked</p>
               <GunIcon id={summary.unlocked} width={160} />
               <p className="font-display text-2xl font-bold">{WEAPONS[summary.unlocked].label}</p>
-              <p className="text-pretty text-sm text-slate-300">It comes with you into every run from now on, and turns up as loot in the maps.</p>
+              <p className="text-pretty text-sm text-slate-300">It comes with you into every run from now on, whatever class you play, and can be upgraded in the shop.</p>
             </div>
           )}
           <p className="font-display text-4xl font-bold tracking-[-0.03em] tabular-nums">{summary.score}</p>
@@ -272,7 +275,7 @@ export function ChapterOverlay({ status, summary, saved, best, progress, records
             <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">Up next</p>
             <p className="font-display text-lg font-bold">{next.name}</p>
             <p className="text-pretty text-sm text-slate-300">{next.subtitle}</p>
-            <p className="mt-2 text-sm font-semibold text-amber-300">New gun: {WEAPONS[next.newGun].label}</p>
+            <p className="mt-2 text-sm font-semibold text-amber-300">Boss: {bossName(next.boss.name)}. Your coins, guns and upgrades come with you.</p>
           </div>
           <div className="flex flex-wrap justify-center gap-2">
             {!isGuest && (

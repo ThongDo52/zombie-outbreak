@@ -5,20 +5,123 @@ import type { Bullet, Effect, Zombie } from './types'
 const progress = (f: Effect) => Math.min(1, Math.max(0, 1 - f.life / (f.max || 1)))
 const nonNeg = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0)
 
-/** Draw every visual effect in world space. */
-export function drawEffects(ctx: CanvasRenderingContext2D, g: Game) {
-  drawEffectList(ctx, g.effects)
+/** Effects that lie on the ground and belong under the fighters: a bomb's landing mark, a summoning circle. */
+const GROUND = new Set<Effect['kind']>(['warn', 'rune'])
+
+/** Draw the visual effects in world space: first the ones painted on the ground, later the ones in the air. */
+export function drawEffects(ctx: CanvasRenderingContext2D, g: Game, layer: 'ground' | 'air' = 'air') {
+  drawEffectList(ctx, g.effects, layer, g.time)
 }
 
-export function drawEffectList(ctx: CanvasRenderingContext2D, effects: readonly Effect[]) {
+export function drawEffectList(ctx: CanvasRenderingContext2D, effects: readonly Effect[], layer: 'ground' | 'air' | 'all' = 'all', t = 0) {
   for (const f of effects) {
+    const ground = GROUND.has(f.kind)
+    if (layer !== 'all' && ground !== (layer === 'ground')) continue
     if (f.kind === 'bite') drawBite(ctx, f)
     else if (f.kind === 'claw') drawClaw(ctx, f)
     else if (f.kind === 'ring') drawRing(ctx, f)
     else if (f.kind === 'bolt') drawBolt(ctx, f)
     else if (f.kind === 'arc') drawArc(ctx, f)
+    else if (f.kind === 'warn') drawWarn(ctx, f, t)
+    else if (f.kind === 'rune') drawRune(ctx, f, t)
+    else if (f.kind === 'flash') drawFlash(ctx, f)
     else drawSlam(ctx, f)
   }
+}
+
+/** Where a Mortar's bomb will land: a ring that fills as the bomb falls, so there is always time to step out. */
+function drawWarn(ctx: CanvasRenderingContext2D, f: Effect, t: number) {
+  const k = progress(f)
+  const r = nonNeg(f.size)
+  ctx.save()
+  ctx.translate(f.x, f.y)
+  ctx.fillStyle = `rgba(255,90,40,${0.1 + 0.12 * k})`
+  ctx.beginPath()
+  ctx.arc(0, 0, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = `rgba(255,120,50,${0.22 + 0.25 * k})`
+  ctx.beginPath()
+  ctx.arc(0, 0, r * k, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = `rgba(255,170,90,${0.65 + 0.35 * Math.sin(t * 22)})`
+  ctx.lineWidth = 2.5
+  ctx.setLineDash([9, 7])
+  ctx.lineDashOffset = -t * 40
+  ctx.beginPath()
+  ctx.arc(0, 0, r, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.setLineDash([])
+  // crosshair ticks
+  ctx.strokeStyle = 'rgba(255,220,170,0.8)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2
+    ctx.moveTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78)
+    ctx.lineTo(Math.cos(a) * r * 1.08, Math.sin(a) * r * 1.08)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** A summoning circle: two rings turning against each other, with marks between them. */
+function drawRune(ctx: CanvasRenderingContext2D, f: Effect, t: number) {
+  const k = progress(f)
+  const grow = Math.min(1, k / 0.2)
+  const alpha = k < 0.6 ? 1 : Math.max(0, 1 - (k - 0.6) / 0.4)
+  const r = nonNeg(f.size * (0.4 + 0.6 * grow))
+  ctx.save()
+  ctx.translate(f.x, f.y)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = alpha
+  ctx.strokeStyle = f.color ?? '#B98CFF'
+  ctx.fillStyle = `rgba(150,110,255,${0.12 * alpha})`
+  ctx.beginPath()
+  ctx.arc(0, 0, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.lineWidth = 2.4
+  ctx.stroke()
+  ctx.lineWidth = 1.3
+  ctx.beginPath()
+  ctx.arc(0, 0, r * 0.68, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.rotate(t * 1.4)
+  ctx.beginPath()
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3
+    const b = ((i + 1) * Math.PI * 2) / 3
+    ctx.moveTo(Math.cos(a) * r * 0.68, Math.sin(a) * r * 0.68)
+    ctx.lineTo(Math.cos(b) * r * 0.68, Math.sin(b) * r * 0.68)
+  }
+  ctx.stroke()
+  ctx.rotate(-t * 2.6)
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4
+    ctx.moveTo(Math.cos(a) * r * 0.76, Math.sin(a) * r * 0.76)
+    ctx.lineTo(Math.cos(a) * r * 0.93, Math.sin(a) * r * 0.93)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** The white-hot instant at the heart of a blast. */
+function drawFlash(ctx: CanvasRenderingContext2D, f: Effect) {
+  const k = progress(f)
+  const r = nonNeg(f.size * (0.6 + 0.6 * k))
+  if (r <= 0) return
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r)
+  grad.addColorStop(0, `rgba(255,255,245,${0.95 * (1 - k)})`)
+  grad.addColorStop(0.45, `rgba(255,225,160,${0.6 * (1 - k)})`)
+  grad.addColorStop(1, 'rgba(255,160,60,0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(f.x, f.y, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }
 
 /** Two jaws snap shut, then blood sprays out of the bite. */
@@ -146,7 +249,11 @@ function drawSlam(ctx: CanvasRenderingContext2D, f: Effect) {
   ctx.beginPath()
   ctx.arc(0, 0, nonNeg(r), 0, Math.PI * 2)
   ctx.fill()
-  ctx.strokeStyle = `rgba(255,220,180,${0.9 * (1 - k)})`
+  if (f.color) {
+    // a coloured shock ring (a Bulwark's slam, a guardian's, an acid burst)
+    ctx.globalAlpha = Math.max(0, 0.9 * (1 - k))
+    ctx.strokeStyle = f.color
+  } else ctx.strokeStyle = `rgba(255,220,180,${0.9 * (1 - k)})`
   ctx.lineWidth = 8 * (1 - k) + 1
   ctx.beginPath()
   ctx.arc(0, 0, nonNeg(r), 0, Math.PI * 2)
@@ -357,6 +464,14 @@ export function drawZones(ctx: CanvasRenderingContext2D, g: Game) {
       }
       continue
     }
+    if (z.look === 'trap') {
+      drawTrap(ctx, cx, cy, r, fade, g.time, z.id)
+      continue
+    }
+    if (z.look === 'heal') {
+      drawStation(ctx, cx, cy, r, fade, g.time, z.id)
+      continue
+    }
     const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r)
     grad.addColorStop(0, `rgba(150,255,60,${0.5 * fade})`)
     grad.addColorStop(0.7, `rgba(80,190,40,${0.32 * fade})`)
@@ -376,12 +491,116 @@ export function drawZones(ctx: CanvasRenderingContext2D, g: Game) {
   }
 }
 
-/** Acid globs spat by Spitters: a bright head with a short trail. */
+/** A Runner's shock trap: a field of blue static with arcs snapping across it. */
+function drawTrap(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, fade: number, t: number, id: number) {
+  ctx.save()
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r)
+  grad.addColorStop(0, `rgba(90,200,255,${0.22 * fade})`)
+  grad.addColorStop(0.8, `rgba(60,150,255,${0.16 * fade})`)
+  grad.addColorStop(1, 'rgba(60,150,255,0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = `rgba(160,235,255,${0.7 * fade})`
+  ctx.lineWidth = 1.6
+  ctx.setLineDash([5, 9])
+  ctx.lineDashOffset = t * 30
+  ctx.beginPath()
+  ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.setLineDash([])
+  // arcs that jump between points on the rim, a new pattern several times a second
+  const step = Math.floor(t * 9)
+  ctx.lineCap = 'round'
+  for (let i = 0; i < 4; i++) {
+    const seed = Math.sin((step + i * 17 + id) * 12.9898) * 43758.5453
+    const a0 = (seed - Math.floor(seed)) * Math.PI * 2
+    const a1 = a0 + 1.2 + (i % 2) * 1.4
+    const x0 = cx + Math.cos(a0) * r * 0.75
+    const y0 = cy + Math.sin(a0) * r * 0.75
+    const x1 = cx + Math.cos(a1) * r * 0.75
+    const y1 = cy + Math.sin(a1) * r * 0.75
+    ctx.strokeStyle = `rgba(190,245,255,${0.85 * fade})`
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    ctx.moveTo(x0, y0)
+    for (let j = 1; j < 5; j++) {
+      const k = j / 5
+      const jx = Math.sin((step + i * 7 + j * 3 + id) * 78.233) * 9
+      ctx.lineTo(x0 + (x1 - x0) * k + jx, y0 + (y1 - y0) * k - jx * 0.6)
+    }
+    ctx.lineTo(x1, y1)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+/** A Medic's station: a soft green field with a cross in the middle and motes of light drifting up. */
+function drawStation(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, fade: number, t: number, id: number) {
+  ctx.save()
+  const pulse = 0.5 + 0.5 * Math.sin(t * 3)
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r)
+  grad.addColorStop(0, `rgba(110,231,168,${(0.3 + 0.08 * pulse) * fade})`)
+  grad.addColorStop(0.85, `rgba(60,200,130,${0.16 * fade})`)
+  grad.addColorStop(1, 'rgba(60,200,130,0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = `rgba(160,255,205,${0.6 * fade})`
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(cx, cy, r * 0.84, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.fillStyle = `rgba(190,255,220,${(0.5 + 0.2 * pulse) * fade})`
+  ctx.fillRect(cx - 4, cy - 14, 8, 28)
+  ctx.fillRect(cx - 14, cy - 4, 28, 8)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.fillStyle = `rgba(200,255,225,${0.75 * fade})`
+  for (let i = 0; i < 7; i++) {
+    const a = i * 0.9 + id
+    const k = (t * 0.5 + i * 0.21) % 1
+    ctx.beginPath()
+    ctx.arc(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.45 - k * 26, 1.4 + (1 - k) * 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/** A Mortar's bomb on its way: a shadow sliding along the ground under a shell that rises and falls. */
+function drawBomb(ctx: CanvasRenderingContext2D, s: Game['shots'][number], t: number) {
+  const k = Math.min(1, Math.max(0, 1 - s.life / (s.maxLife || 1)))
+  const height = Math.sin(k * Math.PI) * 90
+  ctx.save()
+  ctx.fillStyle = `rgba(0,0,0,${0.18 + 0.2 * k})`
+  ctx.beginPath()
+  ctx.ellipse(s.x, s.y, 7 + 5 * k, 3.5 + 2.5 * k, 0, 0, Math.PI * 2)
+  ctx.fill()
+  const y = s.y - height
+  ctx.globalCompositeOperation = 'lighter'
+  glow(ctx, s.x, y, 20, 'rgba(255,130,50,0.55)')
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = '#2B2622'
+  ctx.beginPath()
+  ctx.arc(s.x, y, s.r * 0.8, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = Math.sin(t * 30) > 0 ? '#FFD27A' : '#FF7A3C'
+  ctx.beginPath()
+  ctx.arc(s.x + 3, y - 4, 2.6, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** Enemy shots: acid globs with a short trail, and bombs arcing through the air. */
 export function drawShots(ctx: CanvasRenderingContext2D, g: Game) {
   if (g.shots.length === 0) return
+  for (const s of g.shots) if (s.kind === 'bomb') drawBomb(ctx, s, g.time)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   for (const s of g.shots) {
+    if (s.kind === 'bomb') continue
     const sp = Math.hypot(s.vx, s.vy) || 1
     const tx = s.x - (s.vx / sp) * 22
     const ty = s.y - (s.vy / sp) * 22
@@ -420,9 +639,48 @@ export function drawShield(ctx: CanvasRenderingContext2D, z: Zombie, t: number) 
 export function drawStatus(ctx: CanvasRenderingContext2D, z: Zombie, t: number) {
   const poison = z.poison && z.poison > 0 ? z.poisonStacks ?? 1 : 0
   const chill = z.chill ?? 0
-  if (!poison && !chill && !z.frozen && !(z.shock && z.shock > 0)) return
+  const marked = (z.mark ?? 0) > 0
+  const hasted = (z.haste ?? 0) > 0
+  if (!poison && !chill && !z.frozen && !(z.shock && z.shock > 0) && !marked && !hasted) return
   const r = z.w * 0.62
   ctx.save()
+  if (hasted) {
+    // whipped up by a Screamer: a red aura and streaks trailing behind
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    glow(ctx, z.x, z.y, z.w * 1.1, `rgba(255,60,110,${0.26 + 0.1 * Math.sin(t * 14 + z.id)})`)
+    ctx.strokeStyle = 'rgba(255,120,160,0.8)'
+    ctx.lineWidth = 1.6
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    for (let i = -1; i <= 1; i++) {
+      const off = ((t * 3 + i * 0.33 + z.id * 0.1) % 1) * 8
+      ctx.moveTo(z.x - z.aim.x * (r + 2 + off) - z.aim.y * i * 6, z.y - z.aim.y * (r + 2 + off) + z.aim.x * i * 6)
+      ctx.lineTo(z.x - z.aim.x * (r + 10 + off) - z.aim.y * i * 6, z.y - z.aim.y * (r + 10 + off) + z.aim.x * i * 6)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
+  if (marked) {
+    // a Sniper's mark: a red reticle that turns slowly
+    const rr = Math.max(14, z.w * 0.85) + Math.sin(t * 6) * 1.5
+    ctx.save()
+    ctx.translate(z.x, z.y)
+    ctx.rotate(t * 1.2)
+    ctx.strokeStyle = 'rgba(255,70,50,0.95)'
+    ctx.lineWidth = 2
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2
+      ctx.beginPath()
+      ctx.arc(0, 0, rr, a + 0.25, a + Math.PI / 2 - 0.25)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(Math.cos(a) * (rr - 5), Math.sin(a) * (rr - 5))
+      ctx.lineTo(Math.cos(a) * (rr + 6), Math.sin(a) * (rr + 6))
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
   if (poison) {
     ctx.strokeStyle = `rgba(155,255,59,${0.35 + 0.15 * poison})`
     ctx.lineWidth = 2

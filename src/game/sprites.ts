@@ -1,4 +1,4 @@
-import { CLASSES } from './classes'
+import { CLASSES, SKILL } from './classes'
 import { PICKUPS, WEAPONS } from './config'
 import type { Game } from './engine'
 import { drawNozzleFlame } from './fx'
@@ -9,7 +9,8 @@ import { activeMap, type Obstacle } from './world'
 import type { Pickup, PlayerSlot } from './types'
 
 const DISPLAY = "'Space Grotesk', 'DM Sans', sans-serif"
-const PICKUP_COLOR = { ammo: '#4C86E8', medkit: '#2FBF7A', weapon: '#F0903C' } as const
+const PICKUP_COLOR = { ammo: '#4C86E8', medkit: '#2FBF7A', weapon: '#F0903C', coins: '#E8B923' } as const
+const PICKUP_GLOW = { ammo: 'rgba(76,134,232,0.4)', medkit: 'rgba(47,191,122,0.4)', weapon: 'rgba(240,144,60,0.45)', coins: 'rgba(255,205,70,0.5)' } as const
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
   r = Math.max(0, Number.isFinite(r) ? r : 0)
@@ -69,7 +70,7 @@ export function drawPickup(ctx: CanvasRenderingContext2D, k: Pickup, time: numbe
   const bob = Math.sin(time * 4 + k.id) * 2.5
   const color = PICKUP_COLOR[k.kind]
   const pulse = 0.5 + 0.5 * Math.sin(time * 3 + k.id)
-  glow(ctx, k.x, k.y, 38 + pulse * 8, k.kind === 'weapon' ? 'rgba(240,144,60,0.45)' : k.kind === 'ammo' ? 'rgba(76,134,232,0.4)' : 'rgba(47,191,122,0.4)')
+  glow(ctx, k.x, k.y, 38 + pulse * 8, PICKUP_GLOW[k.kind])
   ctx.fillStyle = 'rgba(0,0,0,0.35)'
   ctx.beginPath()
   ctx.ellipse(k.x, k.y + s / 2, s / 2, 5, 0, 0, Math.PI * 2)
@@ -96,6 +97,27 @@ export function drawPickup(ctx: CanvasRenderingContext2D, k: Pickup, time: numbe
       ctx.fillRect(i * 7 - 2, -7, 4, 4)
       ctx.fillStyle = '#FFE9A8'
     }
+  } else if (k.kind === 'coins') {
+    // a small stack of coins with a glint that travels across it
+    for (let i = 0; i < 3; i++) {
+      const cy = 6 - i * 5
+      ctx.fillStyle = '#8A6410'
+      ctx.beginPath()
+      ctx.ellipse(0, cy + 1.6, 8.5, 3.6, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#FFD25A'
+      ctx.beginPath()
+      ctx.ellipse(0, cy, 8.5, 3.6, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#FFF1B8'
+      ctx.beginPath()
+      ctx.ellipse(-2, cy - 0.8, 4, 1.3, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    const glint = ((time * 0.9 + k.id * 0.37) % 1) * 22 - 11
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    ctx.fillRect(glint, -9, 2, 4)
+    ctx.fillRect(glint - 1, -8, 4, 2)
   } else {
     ctx.fillStyle = '#FFFFFF'
     ctx.fillRect(-3, -9, 6, 18)
@@ -136,12 +158,13 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, g: Game, slot: PlayerS
   const def = WEAPONS[p.weapon]
   ctx.save()
   if (!slot.connected) ctx.globalAlpha = 0.45
+  drawClassGround(ctx, p, t)
   drawCharacter(ctx, p.x, p.y, angle, t, characterLook(slot.skin.character), p.weapon, gunPalette(gunLook(slot.skin.gun), t), {
     moving: p.state === 'move',
     stunned: p.state === 'stunned',
     dashing: p.dashTime > 0,
     punching: p.state === 'attack',
-  })
+  }, p.cls)
 
   const armor = p.armor ?? 0
   if (armor > 0) {
@@ -161,39 +184,120 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, g: Game, slot: PlayerS
     const d = p.w / 2 + def.barrel - 4
     drawNozzleFlame(ctx, p.x + Math.cos(angle) * d, p.y + Math.sin(angle) * d, angle, t)
   } else if (p.muzzle > 0 && p.weapon !== 'fists') {
-    const d = p.w / 2 + def.barrel
-    const mx = p.x + Math.cos(angle) * d
-    const my = p.y + Math.sin(angle) * d
-    ctx.save()
-    ctx.globalCompositeOperation = 'lighter'
-    glow(ctx, mx, my, 46, 'rgba(255,190,80,0.7)')
-    ctx.translate(mx, my)
-    ctx.rotate(angle)
-    ctx.fillStyle = tracerColor(gunLook(slot.skin.gun), t)
-    ctx.beginPath()
-    ctx.moveTo(14, 0)
-    ctx.lineTo(0, -5)
-    ctx.lineTo(3, 0)
-    ctx.lineTo(0, 5)
-    ctx.closePath()
-    ctx.fill()
-    ctx.restore()
+    drawMuzzleFlash(ctx, slot, angle, t)
   }
   ctx.restore()
   if (!isLocal) drawNameTag(ctx, slot, p.x, p.y)
 }
 
-/** Each class wears its colour on the ground, and its skill shows while it is active. */
-function drawClassFx(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: number) {
+/** A burst of fire at the muzzle: a forward tongue, side jets and a hot core, shaped by the gun. */
+function drawMuzzleFlash(ctx: CanvasRenderingContext2D, slot: PlayerSlot, angle: number, t: number) {
+  const p = slot.player
+  const def = WEAPONS[p.weapon]
+  const d = p.w / 2 + def.barrel
+  const mx = p.x + Math.cos(angle) * d
+  const my = p.y + Math.sin(angle) * d
+  const energy = p.weapon === 'railgun' || p.weapon === 'tesla' || p.weapon === 'cryo' || p.weapon === 'venom' || p.weapon === 'wand'
+  const big = p.weapon === 'shotgun' || p.weapon === 'sniper' || p.weapon === 'railgun' || p.weapon === 'launcher' ? 1.6 : p.weapon === 'rifle' ? 1.25 : 1
+  // a new shape every couple of frames, so automatic fire flickers instead of looking stamped
+  const seed = Math.floor(t * 40) + slot.id * 7
+  const jitter = (n: number) => {
+    const v = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453
+    return v - Math.floor(v)
+  }
+  const color = energy ? def.color : tracerColor(gunLook(slot.skin.gun), t)
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  glow(ctx, mx, my, 44 * big, energy ? 'rgba(160,230,255,0.55)' : 'rgba(255,190,80,0.7)')
+  ctx.translate(mx, my)
+  ctx.rotate(angle)
+  const len = (13 + jitter(1) * 9) * big
+  const wide = (4 + jitter(2) * 2.5) * big
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(len, 0)
+  ctx.lineTo(1, -wide)
+  ctx.lineTo(4, 0)
+  ctx.lineTo(1, wide)
+  ctx.closePath()
+  ctx.fill()
+  if (!energy) {
+    // side jets
+    for (const side of [-1, 1]) {
+      const jl = (6 + jitter(3 + side) * 6) * big
+      ctx.beginPath()
+      ctx.moveTo(2, side * 1.5)
+      ctx.lineTo(4 + jl * 0.5, side * jl)
+      ctx.lineTo(6, side * 2)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+  ctx.fillStyle = 'rgba(255,255,240,0.95)'
+  ctx.beginPath()
+  ctx.ellipse(3 + len * 0.2, 0, len * 0.3, wide * 0.45, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** The class colour on the ground under the player, drawn before the body. */
+function drawClassGround(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: number) {
   const cls = CLASSES[p.cls]
   ctx.save()
   ctx.strokeStyle = cls.color
-  ctx.globalAlpha = 0.4
+  ctx.globalAlpha = 0.45
   ctx.lineWidth = 1.6
   ctx.beginPath()
   ctx.arc(p.x, p.y + 4, 15, 0, Math.PI * 2)
   ctx.stroke()
+  // a short arc that turns with time, so a still player still reads as alive
+  ctx.globalAlpha = 0.85
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(p.x, p.y + 4, 15, t * 1.6, t * 1.6 + 0.9)
+  ctx.stroke()
   ctx.restore()
+}
+
+/** What a class's skills look like while they are running. */
+function drawClassFx(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: number) {
+  const cls = CLASSES[p.cls]
+  if (p.cls === 'summoner') {
+    // three runes circle a Warlock at all times
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    for (let i = 0; i < 3; i++) {
+      const a = t * 1.5 + (i * Math.PI * 2) / 3
+      const x = p.x + Math.cos(a) * 21
+      const y = p.y + Math.sin(a) * 21
+      glow(ctx, x, y, 6, 'rgba(185,140,255,0.6)')
+      ctx.fillStyle = '#E6DEFF'
+      ctx.fillRect(x - 1, y - 1, 2, 2)
+    }
+    ctx.restore()
+  }
+  if (p.cls === 'sniper' && p.skillT > 0) {
+    // deadeye: a laser sight along the barrel and an amber haze
+    const def = WEAPONS[p.weapon]
+    const d = p.w / 2 + def.barrel
+    const x0 = p.x + p.aim.x * d
+    const y0 = p.y + p.aim.y * d
+    const x1 = p.x + p.aim.x * 560
+    const y1 = p.y + p.aim.y * 560
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const beam = ctx.createLinearGradient(x0, y0, x1, y1)
+    beam.addColorStop(0, 'rgba(255,120,70,0.9)')
+    beam.addColorStop(1, 'rgba(255,120,70,0)')
+    ctx.strokeStyle = beam
+    ctx.lineWidth = 1.5 + Math.sin(t * 30) * 0.3
+    ctx.beginPath()
+    ctx.moveTo(x0, y0)
+    ctx.lineTo(x1, y1)
+    ctx.stroke()
+    glow(ctx, p.x, p.y, 34, `rgba(255,170,90,${0.22 + 0.08 * Math.sin(t * 10)})`)
+    ctx.restore()
+  }
   if (p.skillT <= 0) return
   const k = Math.min(1, p.skillT / Math.max(0.1, cls.duration))
   if (p.cls === 'tank') {
@@ -201,11 +305,15 @@ function drawClassFx(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: 
     const flick = k < 0.25 ? 0.5 + 0.5 * Math.sin(t * 30) : 1
     ctx.save()
     ctx.globalAlpha = flick
-    ctx.fillStyle = 'rgba(91,155,255,0.16)'
+    const r = 31 + Math.sin(t * 6) * 1.5
+    const body = ctx.createRadialGradient(p.x, p.y, r * 0.5, p.x, p.y, r)
+    body.addColorStop(0, 'rgba(91,155,255,0.04)')
+    body.addColorStop(1, 'rgba(91,155,255,0.28)')
+    ctx.fillStyle = body
     ctx.strokeStyle = 'rgba(160,205,255,0.9)'
     ctx.lineWidth = 2.5
     ctx.beginPath()
-    ctx.arc(p.x, p.y, 31 + Math.sin(t * 6) * 1.5, 0, Math.PI * 2)
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
     ctx.fill()
     ctx.stroke()
     ctx.strokeStyle = 'rgba(200,225,255,0.4)'
@@ -217,6 +325,14 @@ function drawClassFx(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: 
       ctx.lineTo(p.x + Math.cos(a) * 30, p.y + Math.sin(a) * 30)
       ctx.stroke()
     }
+    // the reach of the taunt, as a faint pulse on the ground
+    ctx.globalAlpha = 0.12 * flick
+    ctx.strokeStyle = cls.color
+    ctx.lineWidth = 2
+    ctx.setLineDash([8, 10])
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, SKILL.shield.taunt * 0.5, t * 0.4, t * 0.4 + Math.PI * 2)
+    ctx.stroke()
     ctx.restore()
   } else if (p.cls === 'damage') {
     // overdrive: a red heat haze with sparks climbing off the shoulders
@@ -230,6 +346,16 @@ function drawClassFx(ctx: CanvasRenderingContext2D, p: PlayerSlot['player'], t: 
       ctx.arc(p.x + Math.sin(i * 2.3 + t * 3) * 14, p.y - f * 34, 1.6 * (1 - f) + 0.6, 0, Math.PI * 2)
       ctx.fill()
     }
+    ctx.restore()
+  } else if (p.cls === 'support') {
+    // the heal pulse leaves a green cross hanging over the Medic for a moment
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = k
+    glow(ctx, p.x, p.y, 40, 'rgba(110,231,168,0.5)')
+    ctx.fillStyle = '#B9FFD9'
+    ctx.fillRect(p.x - 2.5, p.y - 34 - (1 - k) * 8, 5, 14)
+    ctx.fillRect(p.x - 7, p.y - 29.5 - (1 - k) * 8, 14, 5)
     ctx.restore()
   }
 }

@@ -17,7 +17,8 @@ export const PLAYER = {
   dashCooldown: 1.8,
 } as const
 
-export const WEAPON_ORDER: WeaponId[] = ['fists', 'pistol', 'smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun', 'railgun', 'venom', 'tesla', 'cryo']
+/** The order guns appear in on the weapon bar and in co-op snapshots. */
+export const WEAPON_ORDER: WeaponId[] = ['fists', 'pistol', 'wand', 'smg', 'shotgun', 'rifle', 'sniper', 'flamer', 'launcher', 'minigun', 'railgun', 'venom', 'tesla', 'cryo']
 
 /** Heavy weapons, earned by beating the armory trial bosses. */
 export const HEAVY_WEAPONS: WeaponId[] = ['venom', 'tesla', 'cryo']
@@ -48,21 +49,31 @@ export interface WeaponDef {
   cloud?: number
   /** Tesla: how many zombies the lightning jumps to after the first. */
   chain?: number
+  /** Share of a Shielder's riot shield the shot ignores (0 none, 1 all of it). */
+  ap?: number
+  /** Radians per second the shot bends toward the nearest zombie in front of it. */
+  homing?: number
+  /** One line for the shop. */
+  blurb?: string
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
   fists: { label: 'Fists', damage: 10, interval: 0.45, speed: 0, pellets: 0, spread: 0, life: 0, pierce: 0, knockback: 200, stun: 0.25, ammoPickup: 0, maxAmmo: 0, barrel: 0, color: '#FFFFFF' },
-  pistol: { label: 'Pistol', damage: 22, interval: 0.32, speed: 900, pellets: 1, spread: 0.03, life: 0.7, pierce: 0, knockback: 120, stun: 0.1, ammoPickup: 0, maxAmmo: 0, barrel: 13, color: '#FFD25A', infinite: true },
-  smg: { label: 'SMG', damage: 16, interval: 0.08, speed: 1000, pellets: 1, spread: 0.08, life: 0.65, pierce: 0, knockback: 85, stun: 0.08, ammoPickup: 90, maxAmmo: 360, barrel: 25, color: '#7FD0FF' },
-  shotgun: { label: 'Shotgun', damage: 11, interval: 0.85, speed: 860, pellets: 7, spread: 0.3, life: 0.4, pierce: 0, knockback: 190, stun: 0.2, ammoPickup: 12, maxAmmo: 48, barrel: 33, color: '#FFA24A' },
-  flamer: { label: 'Flamer', damage: 7, interval: 0.055, speed: 430, pellets: 1, spread: 0.22, life: 0.3, pierce: 99, knockback: 30, stun: 0.04, ammoPickup: 120, maxAmmo: 400, barrel: 30, color: '#FF8A3C' },
-  launcher: { label: 'Launcher', damage: 95, interval: 1, speed: 520, pellets: 1, spread: 0.02, life: 1.1, pierce: 0, knockback: 450, stun: 0.6, ammoPickup: 6, maxAmmo: 24, barrel: 30, color: '#C6FF6B', blast: 160 },
-  minigun: { label: 'Minigun', damage: 10, interval: 0.045, speed: 1000, pellets: 1, spread: 0.14, life: 0.6, pierce: 0, knockback: 50, stun: 0.04, ammoPickup: 150, maxAmmo: 600, barrel: 36, color: '#FFE27A' },
-  railgun: { label: 'Railgun', damage: 160, interval: 1.1, speed: 2600, pellets: 1, spread: 0, life: 0.5, pierce: 99, knockback: 380, stun: 0.4, ammoPickup: 8, maxAmmo: 32, barrel: 40, color: '#7FFFFF' },
-  venom: { label: 'Venom', damage: 16, interval: 0.42, speed: 640, pellets: 1, spread: 0.05, life: 0.9, pierce: 0, knockback: 70, stun: 0, ammoPickup: 18, maxAmmo: 72, barrel: 36, color: '#9BFF3B', heavy: true, status: 'poison', cloud: 100 },
-  tesla: { label: 'Tesla', damage: 26, interval: 0.38, speed: 0, pellets: 1, spread: 0, life: 0, pierce: 0, knockback: 90, stun: 0.35, ammoPickup: 26, maxAmmo: 104, barrel: 34, color: '#7FE8FF', heavy: true, chain: 4 },
-  cryo: { label: 'Cryo', damage: 11, interval: 0.2, speed: 950, pellets: 1, spread: 0.1, life: 0.7, pierce: 1, knockback: 40, stun: 0, ammoPickup: 44, maxAmmo: 176, barrel: 34, color: '#BDF2FF', heavy: true, status: 'freeze' },
-  rifle: { label: 'Rifle', damage: 55, interval: 0.55, speed: 1400, pellets: 1, spread: 0.01, life: 0.8, pierce: 3, knockback: 220, stun: 0.15, ammoPickup: 20, maxAmmo: 80, barrel: 39, color: '#FF6B7A' },
+  pistol: { label: 'Pistol', damage: 22, interval: 0.32, speed: 900, pellets: 1, spread: 0.03, life: 0.7, pierce: 0, knockback: 120, stun: 0.1, ammoPickup: 0, maxAmmo: 0, barrel: 13, color: '#FFD25A', infinite: true, blurb: 'Free ammo. Always there.' },
+  // The Summoner's sidearm: weaker than a pistol, but its bolts curve toward what they are fired at.
+  wand: { label: 'Spirit Wand', damage: 17, interval: 0.3, speed: 640, pellets: 1, spread: 0.04, life: 1.15, pierce: 0, knockback: 60, stun: 0.06, ammoPickup: 0, maxAmmo: 0, barrel: 22, color: '#C9A8FF', infinite: true, homing: 4.2, blurb: 'Free ammo. Bolts curve toward zombies.' },
+  smg: { label: 'SMG', damage: 16, interval: 0.08, speed: 1000, pellets: 1, spread: 0.08, life: 0.65, pierce: 0, knockback: 85, stun: 0.08, ammoPickup: 90, maxAmmo: 360, barrel: 25, color: '#7FD0FF', blurb: 'Fast and light.' },
+  shotgun: { label: 'Shotgun', damage: 11, interval: 0.85, speed: 860, pellets: 7, spread: 0.3, life: 0.4, pierce: 0, knockback: 190, stun: 0.2, ammoPickup: 12, maxAmmo: 48, barrel: 33, color: '#FFA24A', blurb: 'Seven pellets. Clears what is close.' },
+  rifle: { label: 'Rifle', damage: 55, interval: 0.55, speed: 1400, pellets: 1, spread: 0.01, life: 0.8, pierce: 3, knockback: 220, stun: 0.15, ammoPickup: 20, maxAmmo: 80, barrel: 39, color: '#FF6B7A', ap: 0.5, blurb: 'Accurate. Goes through three zombies.' },
+  // The Sniper's own: one heavy round at a time, through shields and through a line of zombies.
+  sniper: { label: 'Longshot', damage: 125, interval: 1, speed: 2300, pellets: 1, spread: 0, life: 0.7, pierce: 4, knockback: 320, stun: 0.3, ammoPickup: 10, maxAmmo: 40, barrel: 44, color: '#FFE9A8', ap: 1, blurb: 'One heavy round. Ignores riot shields.' },
+  flamer: { label: 'Flamer', damage: 7, interval: 0.055, speed: 430, pellets: 1, spread: 0.22, life: 0.3, pierce: 99, knockback: 30, stun: 0.04, ammoPickup: 120, maxAmmo: 400, barrel: 30, color: '#FF8A3C', ap: 1, blurb: 'Sets a crowd on fire.' },
+  launcher: { label: 'Launcher', damage: 95, interval: 1, speed: 520, pellets: 1, spread: 0.02, life: 1.1, pierce: 0, knockback: 450, stun: 0.6, ammoPickup: 6, maxAmmo: 24, barrel: 30, color: '#C6FF6B', blast: 160, ap: 1, blurb: 'Grenades. A big blast.' },
+  minigun: { label: 'Minigun', damage: 10, interval: 0.045, speed: 1000, pellets: 1, spread: 0.14, life: 0.6, pierce: 0, knockback: 50, stun: 0.04, ammoPickup: 150, maxAmmo: 600, barrel: 36, color: '#FFE27A', blurb: 'A wall of bullets.' },
+  railgun: { label: 'Railgun', damage: 160, interval: 1.1, speed: 2600, pellets: 1, spread: 0, life: 0.5, pierce: 99, knockback: 380, stun: 0.4, ammoPickup: 8, maxAmmo: 32, barrel: 40, color: '#7FFFFF', ap: 1, blurb: 'Pierces the whole street.' },
+  venom: { label: 'Venom', damage: 16, interval: 0.42, speed: 640, pellets: 1, spread: 0.05, life: 0.9, pierce: 0, knockback: 70, stun: 0, ammoPickup: 18, maxAmmo: 72, barrel: 36, color: '#9BFF3B', heavy: true, status: 'poison', cloud: 100, ap: 1, blurb: 'Poison and a toxic cloud.' },
+  tesla: { label: 'Tesla', damage: 26, interval: 0.38, speed: 0, pellets: 1, spread: 0, life: 0, pierce: 0, knockback: 90, stun: 0.35, ammoPickup: 26, maxAmmo: 104, barrel: 34, color: '#7FE8FF', heavy: true, chain: 4, ap: 1, blurb: 'Lightning that jumps between zombies.' },
+  cryo: { label: 'Cryo', damage: 11, interval: 0.2, speed: 950, pellets: 1, spread: 0.1, life: 0.7, pierce: 1, knockback: 40, stun: 0, ammoPickup: 44, maxAmmo: 176, barrel: 34, color: '#BDF2FF', heavy: true, status: 'freeze', ap: 0.3, blurb: 'Chills, then freezes solid.' },
 }
 
 /** Fire damage over time after a flamer hit. Big zombies also lose a share of their health. */
@@ -76,6 +87,8 @@ export const STATUS = {
   chain: { range: 175, falloff: 0.78 },
   /** Walking speed while a heavy weapon is in your hands. */
   heavySpeed: 0.88,
+  /** How much a Runner's shock trap slows what stands in it. */
+  snare: 0.55,
 } as const
 
 /** Single-use boosts bought in the shop. */
@@ -95,25 +108,46 @@ export interface ZombieDef {
   color: string
   /** Damage dealt just by touching the player. */
   contact: number
+  /** Coins every player gets when it dies (shared out in co-op, see shop.ts). */
+  coins: number
   /** Ranged and support families: how far away they like to stay. */
   keep?: number
-  /** Spitters: how far they shoot, and the seconds between shots. */
+  /** Spitters and Mortars: how far they shoot. Leapers: how far they jump. */
   range?: number
+  /** Seconds between shots, casts or screams. */
   interval?: number
 }
 
 export const ZOMBIES: Record<ZombieKind, ZombieDef> = {
-  walker: { size: 26, hp: 60, speed: 70, damage: 10, reach: 30, windup: 0.3, recover: 0.45, points: 10, color: '#5E8C4A', contact: 6 },
-  runner: { size: 22, hp: 35, speed: 135, damage: 7, reach: 26, windup: 0.18, recover: 0.3, points: 15, color: '#8FB339', contact: 5 },
-  boss: { size: 72, hp: 1600, speed: 70, damage: 28, reach: 70, windup: 0.6, recover: 0.6, points: 500, color: '#7A4B5A', contact: 25 },
-  tank: { size: 46, hp: 260, speed: 48, damage: 25, reach: 46, windup: 0.5, recover: 0.7, points: 50, color: '#3F6B45', contact: 14 },
-  // New families: spit from range, drop poison, blow up, support the others, hunt from the shadows.
-  spitter: { size: 24, hp: 42, speed: 64, damage: 13, reach: 0, windup: 0.42, recover: 0.5, points: 25, color: '#9ACD32', contact: 3, keep: 250, range: 360, interval: 2.2 },
-  bloater: { size: 42, hp: 170, speed: 36, damage: 10, reach: 34, windup: 0.5, recover: 0.8, points: 45, color: '#B7B84A', contact: 8 },
-  exploder: { size: 26, hp: 48, speed: 118, damage: 34, reach: 0, windup: 0.4, recover: 0.4, points: 30, color: '#D8553A', contact: 4 },
-  shaman: { size: 30, hp: 75, speed: 54, damage: 0, reach: 0, windup: 0.5, recover: 0.5, points: 40, color: '#8E6BD1', contact: 0, keep: 330, interval: 3.2 },
-  lurker: { size: 22, hp: 58, speed: 150, damage: 18, reach: 28, windup: 0.16, recover: 0.5, points: 35, color: '#4B5563', contact: 6 },
+  walker: { size: 26, hp: 60, speed: 70, damage: 10, reach: 30, windup: 0.3, recover: 0.45, points: 10, color: '#5E8C4A', contact: 6, coins: 4 },
+  runner: { size: 22, hp: 35, speed: 135, damage: 7, reach: 26, windup: 0.18, recover: 0.3, points: 15, color: '#8FB339', contact: 5, coins: 5 },
+  boss: { size: 72, hp: 1600, speed: 70, damage: 28, reach: 70, windup: 0.6, recover: 0.6, points: 500, color: '#7A4B5A', contact: 25, coins: 160 },
+  tank: { size: 46, hp: 260, speed: 48, damage: 25, reach: 46, windup: 0.5, recover: 0.7, points: 50, color: '#3F6B45', contact: 14, coins: 18 },
+  // First families: spit from range, drop poison, blow up, support the others, hunt from the shadows.
+  spitter: { size: 24, hp: 42, speed: 64, damage: 13, reach: 0, windup: 0.42, recover: 0.5, points: 25, color: '#9ACD32', contact: 3, coins: 9, keep: 250, range: 360, interval: 2.2 },
+  bloater: { size: 42, hp: 170, speed: 36, damage: 10, reach: 34, windup: 0.5, recover: 0.8, points: 45, color: '#B7B84A', contact: 8, coins: 15 },
+  exploder: { size: 26, hp: 48, speed: 118, damage: 34, reach: 0, windup: 0.4, recover: 0.4, points: 30, color: '#D8553A', contact: 4, coins: 10 },
+  shaman: { size: 30, hp: 75, speed: 54, damage: 0, reach: 0, windup: 0.5, recover: 0.5, points: 40, color: '#8E6BD1', contact: 0, coins: 14, keep: 330, interval: 3.2 },
+  lurker: { size: 22, hp: 58, speed: 150, damage: 18, reach: 28, windup: 0.16, recover: 0.5, points: 35, color: '#4B5563', contact: 6, coins: 12 },
+  // Second families. Each one asks a different question of the squad:
+  // a Shielder shrugs off bullets from the front, so flank it, burn it, or send the pets round the back.
+  shielder: { size: 30, hp: 105, speed: 60, damage: 14, reach: 32, windup: 0.4, recover: 0.6, points: 40, color: '#6F8FB8', contact: 7, coins: 13 },
+  // a Leaper jumps the line and lands on whoever stands at the back.
+  leaper: { size: 24, hp: 50, speed: 100, damage: 16, reach: 0, windup: 0.55, recover: 0.95, points: 35, color: '#C27A3A', contact: 6, coins: 12, range: 320 },
+  // a Screamer whips the horde into a sprint and calls more. Kill it first.
+  screamer: { size: 26, hp: 52, speed: 60, damage: 0, reach: 0, windup: 0.8, recover: 0.6, points: 40, color: '#D94F8C', contact: 0, coins: 14, keep: 320, interval: 7.5 },
+  // a Brood splits into a swarm of Mites when it dies: bring fire or a blast.
+  brood: { size: 40, hp: 140, speed: 44, damage: 12, reach: 36, windup: 0.5, recover: 0.8, points: 45, color: '#7A5C8A', contact: 8, coins: 12 },
+  mite: { size: 14, hp: 12, speed: 168, damage: 5, reach: 16, windup: 0.14, recover: 0.35, points: 3, color: '#B58AC9', contact: 3, coins: 1 },
+  // a Mortar lobs bombs over walls onto a marked spot: keep moving.
+  mortar: { size: 34, hp: 90, speed: 46, damage: 22, reach: 0, windup: 0.7, recover: 0.8, points: 45, color: '#8A6B3A', contact: 4, coins: 15, keep: 400, range: 560, interval: 3.6 },
 }
+
+/** What comes out of each kind of zombie when it is hit (most bleed red). */
+const BLOOD: Partial<Record<ZombieKind, string>> = {
+  spitter: '#6E8A2A', bloater: '#8E9A2E', shaman: '#5A3F9A', brood: '#6A3F7A', mite: '#8A5CA0', lurker: '#3A4452', mortar: '#7A5A2A',
+}
+export const bloodOf = (kind: ZombieKind): string => BLOOD[kind] ?? '#7A1F2B'
 
 /** Enemy fire, puddles and blasts. */
 export const ENEMY = {
@@ -122,13 +156,20 @@ export const ENEMY = {
   exploder: { fuse: 0.45, blast: 190, knockback: 420, trigger: 52 },
   shaman: { range: 260, healShare: 0.18, shield: 3.5, shieldTaken: 0.4 },
   lurker: { cloakRange: 260, behind: 150 },
+  /** Share of a bullet that gets past the shield from the front, and how head-on a hit must be to count as "front". */
+  shielder: { taken: 0.2, meleeTaken: 0.55, arc: 0.3 },
+  leaper: { speed: 640, time: 0.5, cooldown: 2.6, knockback: 380, hit: 48 },
+  screamer: { range: 310, haste: 4.5, speed: 1.35, tempo: 1.3, call: 2 },
+  brood: { mites: 5 },
+  mortar: { flight: 1.15, blast: 132, knockback: 300, r: 11 },
   /** Caps so a busy room cannot pile up objects. */
   maxShots: 120,
   maxZones: 90,
+  maxMites: 45,
 } as const
 
 export const WAVE = {
-  intermission: 3,
+  intermission: 4,
   healBetween: 4,
   spawnInterval: 0.18,
   maxAlive: 60,

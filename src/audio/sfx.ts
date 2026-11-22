@@ -13,6 +13,20 @@ function gunshot(a: AudioEngine, weapon: string, pan: number, v: number) {
       a.tone({ freq: 190 * j, freqEnd: 50, dur: 0.13, gain: 0.7 * v, pan })
       a.noise({ dur: 0.02, gain: 0.5 * v, pan, filter: { type: 'highpass', freq: 4000 } })
       break
+    case 'wand':
+      // a spirit bolt leaving the crystal: a soft chime with a breath of air
+      a.tone({ type: 'sine', freq: 880 * j, freqEnd: 1560, dur: 0.14, gain: 0.2 * v, pan })
+      a.tone({ type: 'triangle', freq: 1320 * j, freqEnd: 660, dur: 0.18, gain: 0.12 * v, pan, when: a.now + 0.02 })
+      a.noise({ dur: 0.1, gain: 0.14 * v, pan, filter: { type: 'bandpass', freq: 3200, freqEnd: 1400, q: 1.2 } })
+      break
+    case 'sniper':
+      // one heavy round: a hard crack, a deep thump and a long tail rolling away
+      a.noise({ dur: 0.2, gain: 1 * v, pan, filter: { type: 'bandpass', freq: 3200, freqEnd: 380, q: 0.6 } })
+      a.tone({ freq: 130, freqEnd: 34, dur: 0.34, gain: 0.95 * v, pan })
+      a.tone({ type: 'sawtooth', freq: 2400, freqEnd: 500, dur: 0.07, gain: 0.26 * v, pan })
+      a.noise({ dur: 0.9, gain: 0.26 * v, pan, when: a.now + 0.06, filter: { type: 'lowpass', freq: 1300, freqEnd: 160 } })
+      a.noise({ dur: 0.03, gain: 0.3 * v, pan, when: a.now + 0.5, filter: { type: 'highpass', freq: 2400 } })
+      break
     case 'smg':
       a.noise({ dur: 0.06, gain: 0.55 * v, pan, filter: { type: 'lowpass', freq: 5200, freqEnd: 1500 } })
       a.tone({ freq: 240 * j, freqEnd: 90, dur: 0.07, gain: 0.4 * v, pan, type: 'triangle' })
@@ -72,7 +86,7 @@ function gunshot(a: AudioEngine, weapon: string, pan: number, v: number) {
 }
 
 function zombieVoice(a: AudioEngine, kind: string, mode: 'groan' | 'attack' | 'die', pan: number, v: number) {
-  const base = { walker: 100, runner: 160, tank: 58, boss: 38 }[kind] ?? 100
+  const base = { walker: 100, runner: 160, tank: 58, boss: 38, shielder: 82, leaper: 150, screamer: 250, brood: 66, mite: 320, mortar: 62 }[kind] ?? 100
   const j = rnd(0.88, 1.14)
   if (mode === 'groan') {
     const dur = kind === 'boss' ? 1.9 : kind === 'tank' ? 1.3 : kind === 'runner' ? 0.55 : rnd(0.8, 1.3)
@@ -179,7 +193,11 @@ export function playSfx(a: AudioEngine, e: SoundEvent, pan: number, v: number) {
       zombieVoice(a, 'boss', 'attack', pan, v)
       break
     case 'slam':
-      explosion(a, pan, v, true)
+      // a stone guardian's slam is a duller thud than a boss's
+      if (e.kind === 'golem') {
+        a.tone({ freq: 80, freqEnd: 30, dur: 0.4, gain: 0.7 * v, pan })
+        a.noise({ dur: 0.3, gain: 0.5 * v, pan, filter: { type: 'lowpass', freq: 900, freqEnd: 120 } })
+      } else explosion(a, pan, v, true)
       break
     case 'summon':
       a.tone({ type: 'sawtooth', freq: 55, freqEnd: 110, dur: 1.4, gain: 0.35, attack: 0.5, filter: { type: 'lowpass', freq: 700 } })
@@ -241,9 +259,97 @@ export function playSfx(a: AudioEngine, e: SoundEvent, pan: number, v: number) {
       a.tone({ type: 'triangle', freq: 196, freqEnd: 233, dur: 0.7, gain: 0.22 * v, pan, attack: 0.2 })
       a.tone({ type: 'sine', freq: 392, freqEnd: 466, dur: 0.7, gain: 0.12 * v, pan, attack: 0.2 })
       break
+    case 'coin':
+      // two bright pings, like a coin spun on a counter
+      a.tone({ type: 'sine', freq: 1760, dur: 0.07, gain: 0.16 * v, pan })
+      a.tone({ type: 'sine', freq: 2349, dur: 0.12, gain: 0.14 * v, pan, when: a.now + 0.05 })
+      break
+    case 'buy':
+      // the till: a slide, a clack and a rising chime
+      a.noise({ dur: 0.05, gain: 0.3, filter: { type: 'highpass', freq: 2200 } })
+      a.noise({ dur: 0.04, gain: 0.35, when: a.now + 0.1, filter: { type: 'bandpass', freq: 1400, q: 2 } })
+      arpeggio(a, [784, 988, 1319, 1568], 0.055, 0.9, 'triangle', 0.32)
+      break
+    case 'deny':
+      a.tone({ type: 'square', freq: 196, freqEnd: 147, dur: 0.14, gain: 0.16, filter: { type: 'lowpass', freq: 900 } })
+      a.tone({ type: 'square', freq: 147, freqEnd: 110, dur: 0.16, gain: 0.14, when: a.now + 0.11, filter: { type: 'lowpass', freq: 900 } })
+      break
+    case 'scream':
+      // a Screamer: a shriek that climbs and wavers, with breath behind it
+      a.tone({ type: 'sawtooth', freq: 700, freqEnd: 1900, dur: 0.7, gain: 0.3 * v, pan, attack: 0.05, filter: { type: 'bandpass', freq: 1800, freqEnd: 2800, q: 2 } })
+      a.tone({ type: 'sawtooth', freq: 740, freqEnd: 2050, dur: 0.7, gain: 0.22 * v, pan, attack: 0.05, filter: { type: 'bandpass', freq: 2200, freqEnd: 3200, q: 3 } })
+      a.noise({ dur: 0.7, gain: 0.22 * v, pan, filter: { type: 'bandpass', freq: 2600, freqEnd: 4200, q: 1.5 } })
+      break
+    case 'leap':
+      // a Leaper leaving the ground: a rush of air and a snarl
+      a.noise({ dur: 0.28, gain: 0.4 * v, pan, filter: { type: 'bandpass', freq: 500, freqEnd: 2400, q: 1 } })
+      a.growl({ f0: 190, f0End: 300, dur: 0.3, gain: 0.4 * v, pan, vib: 16, rough: 2, open: 1.3 })
+      break
+    case 'lob':
+      // a Mortar firing: a hollow thump from the tube, then the shell whistling up
+      a.tone({ freq: 150, freqEnd: 55, dur: 0.22, gain: 0.7 * v, pan })
+      a.noise({ dur: 0.12, gain: 0.5 * v, pan, filter: { type: 'lowpass', freq: 1400, freqEnd: 300 } })
+      a.tone({ type: 'sine', freq: 500, freqEnd: 1100, dur: 0.5, gain: 0.1 * v, pan, when: a.now + 0.12, attack: 0.2 })
+      break
+    case 'clang':
+      // a bullet off a riot shield
+      a.tone({ type: 'square', freq: 1480 * rnd(0.92, 1.08), dur: 0.09, gain: 0.14 * v, pan, filter: { type: 'bandpass', freq: 2600, q: 4 } })
+      a.tone({ type: 'sine', freq: 2960 * rnd(0.95, 1.05), dur: 0.16, gain: 0.1 * v, pan })
+      a.noise({ dur: 0.03, gain: 0.3 * v, pan, filter: { type: 'highpass', freq: 5000 } })
+      break
+    case 'howl':
+      if (e.kind === 'fall') {
+        // a spirit wolf fading: a short whine falling away
+        a.tone({ type: 'sine', freq: 620, freqEnd: 240, dur: 0.4, gain: 0.2 * v, pan, attack: 0.03 })
+        a.noise({ dur: 0.3, gain: 0.1 * v, pan, filter: { type: 'bandpass', freq: 1600, freqEnd: 500, q: 1 } })
+      } else {
+        // the pack answering: a howl that rises, holds and falls, with a second voice a fifth above
+        a.tone({ type: 'sine', freq: 330, freqEnd: 587, dur: 0.9, gain: 0.26 * v, pan, attack: 0.18 })
+        a.tone({ type: 'triangle', freq: 494, freqEnd: 880, dur: 0.8, gain: 0.12 * v, pan, attack: 0.25, when: a.now + 0.1 })
+        a.noise({ dur: 0.6, gain: 0.08 * v, pan, filter: { type: 'bandpass', freq: 1200, freqEnd: 2200, q: 2 } })
+      }
+      break
+    case 'petbite':
+      a.noise({ dur: 0.05, gain: 0.34 * v, pan, filter: { type: 'highpass', freq: 2800 } })
+      a.tone({ type: 'triangle', freq: 520, freqEnd: 260, dur: 0.07, gain: 0.2 * v, pan })
+      break
+    case 'crumble':
+      // a stone guardian falling apart
+      a.noise({ dur: 0.7, gain: 0.6 * v, pan, filter: { type: 'lowpass', freq: 1200, freqEnd: 140 } })
+      a.tone({ freq: 70, freqEnd: 30, dur: 0.6, gain: 0.6 * v, pan })
+      a.noise({ dur: 0.25, gain: 0.25 * v, pan, when: a.now + 0.15, filter: { type: 'bandpass', freq: 2400, freqEnd: 900, q: 1 } })
+      break
     case 'skill':
-      // class skills: Bulwark rings, Striker roars up, Medic chimes
-      if (e.kind === 'tank') {
+      // class skills, each with a voice of its own
+      if (e.kind === 'sniper') {
+        // deadeye: breath held, a rising whine as the sight settles
+        a.tone({ type: 'sine', freq: 440, freqEnd: 1320, dur: 0.4, gain: 0.2 * v, pan, attack: 0.05 })
+        a.noise({ dur: 0.05, gain: 0.3 * v, pan, when: a.now + 0.34, filter: { type: 'highpass', freq: 3200 } })
+        a.tone({ type: 'square', freq: 1760, dur: 0.05, gain: 0.1 * v, pan, when: a.now + 0.36 })
+      } else if (e.kind === 'mark') {
+        // a target locked: two sharp ticks
+        a.tone({ type: 'square', freq: 1175, dur: 0.05, gain: 0.16 * v, pan })
+        a.tone({ type: 'square', freq: 1568, dur: 0.09, gain: 0.18 * v, pan, when: a.now + 0.08 })
+      } else if (e.kind === 'slam') {
+        explosion(a, pan, v * 0.8)
+        a.tone({ freq: 60, freqEnd: 26, dur: 0.6, gain: 0.8 * v, pan })
+      } else if (e.kind === 'grenade') {
+        // the pin and the throw
+        a.noise({ dur: 0.03, gain: 0.4 * v, pan, filter: { type: 'highpass', freq: 3000 } })
+        a.noise({ dur: 0.18, gain: 0.3 * v, pan, when: a.now + 0.05, filter: { type: 'bandpass', freq: 500, freqEnd: 1800, q: 1 } })
+      } else if (e.kind === 'trap') {
+        a.noise({ dur: 0.3, gain: 0.4 * v, pan, filter: { type: 'highpass', freq: 3000 } })
+        a.tone({ type: 'sawtooth', freq: 180, freqEnd: 2400, dur: 0.25, gain: 0.22 * v, pan, filter: { type: 'lowpass', freq: 5000 } })
+        a.tone({ type: 'square', freq: 110, dur: 0.3, gain: 0.14 * v, pan, when: a.now + 0.1 })
+      } else if (e.kind === 'station') {
+        arpeggio(a, [392, 523, 659], 0.09, v, 'sine', 0.5)
+        a.tone({ freq: 196, dur: 0.7, gain: 0.16 * v, pan, attack: 0.2 })
+      } else if (e.kind === 'golem') {
+        // stone grinding up out of the ground, then a chord of the spell that binds it
+        a.noise({ dur: 0.7, gain: 0.5 * v, pan, filter: { type: 'lowpass', freq: 300, freqEnd: 1400 } })
+        a.tone({ freq: 48, freqEnd: 96, dur: 0.7, gain: 0.6 * v, pan, attack: 0.1 })
+        arpeggio(a, [220, 277, 330], 0.1, v * 0.8, 'triangle', 0.6)
+      } else if (e.kind === 'tank') {
         a.tone({ type: 'sawtooth', freq: 140, freqEnd: 420, dur: 0.35, gain: 0.3 * v, pan, filter: { type: 'lowpass', freq: 1400 } })
         a.tone({ freq: 880, dur: 0.5, gain: 0.2 * v, pan, when: a.now + 0.1 })
       } else if (e.kind === 'damage') {

@@ -5,9 +5,8 @@ import { DEFAULT_CLASS, type ClassId } from '@/game/classes'
 import { getGame, loadClass } from '@/game/save'
 import type { SkinSelection } from '@/game/skins'
 import type { BoostCharges, PlayerInput, WeaponId } from '@/game/types'
-import { startHosting, type HostSession } from './hostSession'
-import { loadIceServers } from './ice'
-import { joinPeer } from './peer'
+import { startHosting, type HostPaths, type HostSession } from './hostSession'
+import { joinHosted } from './join'
 import { COOP_PATH, RECONNECT_SECONDS, type ClientMessage, type RoomMode, type RoomState, type ServerMessage } from './protocol'
 import { webSocketLink, type Link } from './transport'
 
@@ -18,8 +17,11 @@ export type CoopPhase = 'idle' | 'connecting' | 'signing' | 'online' | 'reconnec
 /** Where a room runs: the Endless Descent server, your own device, or a friend's device reached by its code. */
 export type CoopTarget = { kind: 'server' } | { kind: 'host' } | { kind: 'peer'; code: string }
 
-/** How your traffic reaches the room. */
-export type Route = 'local' | 'server' | 'direct' | 'relayed' | 'unknown'
+/**
+ * How your traffic reaches the room: you host it ('local'), the Endless Descent server ('server'), straight
+ * to a friend's browser ('direct'), through a WebRTC TURN server ('relayed') or the online relay ('relay').
+ */
+export type Route = 'local' | 'server' | 'direct' | 'relayed' | 'relay' | 'unknown'
 
 export interface CoopState {
   phase: CoopPhase
@@ -29,8 +31,8 @@ export interface CoopState {
   /** Round trip to the room in milliseconds, once measured. */
   ping: number | null
   route: Route | null
-  /** Set while you host a friend-hosted room on this device. */
-  hosting: { code: string; inWorker: boolean; relay: boolean } | null
+  /** Set while you host a friend-hosted room on this device. `turn`: a WebRTC relay is configured. `paths`: the ways in that are open. */
+  hosting: { code: string; inWorker: boolean; turn: boolean; paths: HostPaths } | null
 }
 
 const SESSION_KEY = 'coop-session'
@@ -140,12 +142,20 @@ export class CoopClient {
       link = await this.openServer()
       route = 'server'
     } else if (target.kind === 'host') {
-      this.hosting = await startHosting((reason) => this.onHostClosed(reason))
-      link = this.hosting.local
+      const hosted = await startHosting(
+        (reason) => this.onHostClosed(reason),
+        // a way into the room opened late, or the online relay dropped and came back
+        (paths) => {
+          if (this.hosting && this.state.hosting) this.set({ hosting: { ...this.state.hosting, paths } })
+        },
+      )
+      this.hosting = hosted
+      link = hosted.local
       route = 'local'
-      this.set({ hosting: { code: this.hosting.code, inWorker: this.hosting.inWorker, relay: this.hosting.relay } })
+      this.set({ hosting: { code: hosted.code, inWorker: hosted.inWorker, turn: hosted.turn, paths: hosted.paths } })
     } else {
-      link = await joinPeer(target.code, await loadIceServers())
+      // straight to the host when the networks allow it, through the online relay when they do not
+      link = await joinHosted(target.code)
     }
     this.link = link
     link.onMessage = (text) => {
@@ -379,11 +389,17 @@ export class CoopClient {
     g.slots = []
     g.zombies = []
     g.bullets = []
+    g.pets = []
+    g.zones = []
+    g.shots = []
     g.pickups = []
     g.particles = []
     g.effects = []
     g.texts = []
     g.decals = []
+    g.lights = []
+    g.coinFx = []
+    g.shopOpen = false
     g.setStatus('ready')
   }
 
@@ -418,8 +434,11 @@ export class CoopClient {
     }
     const keys = (slot.keys.has('up') ? 1 : 0) | (slot.keys.has('down') ? 2 : 0) | (slot.keys.has('left') ? 4 : 0) | (slot.keys.has('right') ? 8 : 0)
     const a = g.actions
-    const input: PlayerInput = { keys, fire: slot.firing, ax, ay, skill: a.skill || undefined, weapon: a.weapon, heal: a.heal || undefined, armor: a.armor || undefined }
-    g.actions = { skill: false, heal: false, armor: false }
+    const input: PlayerInput = {
+      keys, fire: slot.firing && !g.shopOpen, ax, ay,
+      skill: a.skill || undefined, skill2: a.skill2 || undefined, weapon: a.weapon, heal: a.heal || undefined, armor: a.armor || undefined, buy: a.buy,
+    }
+    g.actions = { skill: false, skill2: false, heal: false, armor: false }
     this.send({ t: 'input', ...input })
   }
 

@@ -1,0 +1,13 @@
+# The online relay as a container (for Render, Fly, Railway, a VPS...). Build from the project root:
+#   docker build -f server/Dockerfile.relay -t zombie-relay .
+#   docker run -p 5175:5175 zombie-relay
+# Then set VITE_RELAY_URL=wss://<where it runs>/relay in the game's .env and rebuild the page.
+# The relay is four small files and one package (ws); it needs no wallet, no chain access and no settings.
+FROM oven/bun:1
+WORKDIR /app
+RUN echo '{"name":"zombie-relay","private":true,"type":"module"}' > package.json && bun add ws@^8
+COPY server/relay-standalone.ts server/relay.ts server/relayCore.ts ./server/
+COPY src/net/relayProtocol.ts ./src/net/relayProtocol.ts
+ENV PORT=5175
+EXPOSE 5175
+CMD ["bun", "run", "server/relay-standalone.ts"]

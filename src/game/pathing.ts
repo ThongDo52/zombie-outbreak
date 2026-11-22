@@ -6,7 +6,7 @@ import { activeMap } from './world'
  * Zombie navigation. A flow field (breadth-first search from the player over a grid)
  * tells every zombie which neighbouring cell is closer to the player, so they walk around
  * walls and crates. When nothing blocks the way they simply run straight at you.
- * Two fields exist: one for normal bodies and one for tanks and bosses, which need wider gaps.
+ * Two fields exist: one for normal bodies and one for the big ones (tanks, bloaters, broods, mortars, bosses), which need wider gaps.
  */
 const CELL = 40
 const BODY = { small: 30, large: 76 } as const
@@ -145,7 +145,8 @@ export function chaseDir(z: Zombie, p: Vec, dt: number): Vec {
   const direct = normalize(p.x - z.x, p.y - z.y)
   if (z.los) return direct
 
-  const kind: Kind = z.w > 40 ? 'large' : 'small'
+  // anything wider than the small field was built for follows the wide one, or it would wedge itself into a gap it cannot pass
+  const kind: Kind = z.w > BODY.small ? 'large' : 'small'
   const field = state[kind]
   if (state.mapIndex !== activeMap.index || field.length === 0) return direct
   const { cols, rows, ok } = gridFor(kind)

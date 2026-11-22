@@ -1,16 +1,24 @@
 import { BOOST, VIEW_H, VIEW_W, WEAPON_ORDER, WEAPONS } from './config'
-import { CLASSES } from './classes'
+import { CLASSES, type SkillDef } from './classes'
 import { formatClock } from './time'
 import { DIFFICULTY } from './difficulty'
 import type { Game } from './engine'
 import { drawGunCentered } from './gunart'
 import { hasAmmo } from './pickups'
+import { shopEntries } from './shop'
+import { coinIcon } from './shopui'
 import { slotColor } from './sprites'
+import { COIN_HOME } from './visuals'
 import { activeMap } from './world'
 
 const DISPLAY = "'Space Grotesk', 'DM Sans', sans-serif"
 const BODY = "'DM Sans', sans-serif"
 const MAP_W = 150
+/** Top of the minimap: it sits under the health bar and the coin counter. */
+const MAP_Y = 100
+
+/** What the HUD remembers between frames, per game: the health that was just lost (so it can drain away visibly). */
+const memory = new WeakMap<Game, { ghost: number; hold: number; time: number }>()
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r = 10) {
   ctx.fillStyle = 'rgba(8,14,20,0.66)'
@@ -24,25 +32,29 @@ function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
 
 export function drawHud(ctx: CanvasRenderingContext2D, g: Game) {
   drawHealth(ctx, g)
+  drawCoins(ctx, g)
   drawMinimap(ctx, g)
   drawStats(ctx, g)
   drawTimer(ctx, g)
   drawWeaponBar(ctx, g)
   drawBoosts(ctx, g)
-  drawDash(ctx, g)
+  drawSkills(ctx, g)
   drawTeam(ctx, g)
   drawFinder(ctx, g)
   drawBossBar(ctx, g)
   drawDownNotice(ctx, g)
   drawChapterBanner(ctx, g)
-  if (g.banner > 0 && g.status === 'playing') {
+  if (g.banner > 0 && g.status === 'playing' && !g.shopOpen) {
     ctx.save()
     ctx.globalAlpha = Math.min(1, g.banner)
     ctx.textAlign = 'center'
     ctx.shadowColor = 'rgba(255,75,87,0.8)'
     ctx.shadowBlur = 24
     ctx.fillStyle = g.bossWave ? '#FF6B77' : '#FFFFFF'
-    ctx.font = `700 ${g.bossWave ? 50 : 58}px ${DISPLAY}`
+    // the banner slams in a little oversized and settles
+    const shown = (g.descent ? (g.bossWave ? 2.8 : 2) : g.bossWave ? 2.6 : 1.8) - g.banner
+    const pop = shown >= 0 && shown < 0.22 ? 1 + (1 - shown / 0.22) * 0.3 : 1
+    ctx.font = `700 ${Math.round((g.bossWave ? 50 : 58) * pop)}px ${DISPLAY}`
     ctx.fillText(g.descent ? (g.bossWave ? `BOSS FLOOR ${g.floor}` : `FLOOR ${g.floor}`) : g.bossWave ? `BOSS WAVE ${g.wave}` : `WAVE ${g.wave}`, VIEW_W / 2, VIEW_H / 2 - 70)
     ctx.shadowBlur = 0
     ctx.font = `500 15px ${BODY}`
@@ -68,6 +80,25 @@ function drawHealth(ctx: CanvasRenderingContext2D, g: Game) {
   ctx.beginPath()
   ctx.roundRect(50, 20, 156, 18, 9)
   ctx.fill()
+  // the health just lost lingers in white for a moment, then drains away
+  let m = memory.get(g)
+  if (!m) {
+    m = { ghost: ratio, hold: 0, time: g.time }
+    memory.set(g, m)
+  }
+  const dt = Math.max(0, Math.min(0.1, g.time - m.time))
+  m.time = g.time
+  if (ratio >= m.ghost) {
+    m.ghost = ratio
+    m.hold = 0.35
+  } else if (m.hold > 0) m.hold -= dt
+  else m.ghost = Math.max(ratio, m.ghost - dt * 0.9)
+  if (m.ghost > ratio + 0.005) {
+    ctx.fillStyle = 'rgba(255,235,235,0.85)'
+    ctx.beginPath()
+    ctx.roundRect(50, 20, Math.max(8, 156 * m.ghost), 18, 9)
+    ctx.fill()
+  }
   const grad = ctx.createLinearGradient(50, 0, 206, 0)
   grad.addColorStop(0, ratio > 0.35 ? '#2FBF7A' : '#FF4B57')
   grad.addColorStop(1, ratio > 0.35 ? '#8FE3B1' : '#FF8A93')
@@ -235,8 +266,10 @@ function drawWeaponBar(ctx: CanvasRenderingContext2D, g: Game) {
   // only the weapons you hold, so a full armory of twelve still fits
   const ids = WEAPON_ORDER.filter((id) => p.owned[id])
   const gap = 3
-  const w = Math.min(56, Math.floor((560 - gap * (ids.length - 1)) / ids.length))
-  const x0 = VIEW_W / 2 - (ids.length * (w + gap) - gap) / 2
+  // the bar keeps clear of the boosts on the left and the skills on the right
+  const room = 500
+  const w = Math.min(56, Math.floor((room - gap * (ids.length - 1)) / ids.length))
+  const x0 = VIEW_W / 2 - 6 - (ids.length * (w + gap) - gap) / 2
   ids.forEach((id, i) => {
     const def = WEAPONS[id]
     const x = x0 + i * (w + gap)
@@ -265,6 +298,10 @@ function drawWeaponBar(ctx: CanvasRenderingContext2D, g: Game) {
     ctx.font = `700 10px ${DISPLAY}`
     ctx.fillStyle = '#9FB0C8'
     ctx.fillText(KEY_LABELS[i] ?? '', x + 5, y + 12)
+    // upgrade pips, top right of the card
+    const lv = p.gunLv?.[id] ?? 0
+    ctx.fillStyle = '#FFD25A'
+    for (let n = 0; n < lv; n++) ctx.fillRect(x + w - 8 - n * 5, y + 5, 3.5, 3.5)
     ctx.textAlign = 'center'
     ctx.font = `600 10px ${BODY}`
     ctx.fillStyle = hasAmmo(p, id) ? '#FFFFFF' : '#FF8A93'
@@ -274,33 +311,94 @@ function drawWeaponBar(ctx: CanvasRenderingContext2D, g: Game) {
   })
 }
 
-/** The class skill on Shift: its name, how long until it is ready, and how long its effect has left. */
-function drawDash(ctx: CanvasRenderingContext2D, g: Game) {
+/** The purse, under the health bar, with the key that opens the shop. It glows when a new gun can be afforded. */
+function drawCoins(ctx: CanvasRenderingContext2D, g: Game) {
   const p = g.player
-  const cls = CLASSES[p.cls]
-  const x = VIEW_W - 124
-  const y = VIEW_H - 58
-  const ready = p.skillCd <= 0
-  const active = p.skillT > 0 && (p.cls === 'tank' || p.cls === 'damage')
-  panel(ctx, x, y, 112, 46, 10)
-  // charge bar: fills up while the skill recovers, drains while its effect lasts
-  const fill = active ? p.skillT / cls.duration : ready ? 1 : 1 - p.skillCd / cls.cooldown
-  ctx.fillStyle = active ? cls.color : ready ? cls.color : 'rgba(255,255,255,0.22)'
+  const coins = Math.floor(p.coins ?? 0)
+  const pulse = g.coinPulse
+  panel(ctx, 12, 64, 204, 28, 9)
+  coinIcon(ctx, COIN_HOME.x, COIN_HOME.y + 1, 7.5 + pulse * 2.5)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = pulse > 0.05 ? '#FFF1B8' : '#FFD25A'
+  ctx.font = `700 ${Math.round(14 + pulse * 3)}px ${DISPLAY}`
+  ctx.fillText(coins.toLocaleString('en-US'), 44, 83)
+  // the shop key; it pulses when there is a gun on the shelf you can pay for
+  const canBuyGun = g.status === 'playing' && !p.down && shopEntries(p).some((e) => e.kind === 'gun' && !e.blocked)
+  const glow = canBuyGun ? 0.55 + 0.45 * Math.sin(g.time * 6) : 0
+  ctx.fillStyle = canBuyGun ? `rgba(255,210,90,${0.2 + 0.3 * glow})` : 'rgba(255,255,255,0.1)'
   ctx.beginPath()
-  ctx.roundRect(x + 8, y + 33, 96 * Math.max(0, Math.min(1, fill)), 6, 3)
+  ctx.roundRect(134, 69, 76, 18, 6)
+  ctx.fill()
+  if (canBuyGun) {
+    ctx.strokeStyle = `rgba(255,210,90,${0.5 + 0.5 * glow})`
+    ctx.lineWidth = 1.2
+    ctx.stroke()
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.beginPath()
+  ctx.roundRect(138, 72, 14, 12, 3)
   ctx.fill()
   ctx.textAlign = 'center'
+  ctx.fillStyle = '#0B1B3A'
+  ctx.font = `700 10px ${DISPLAY}`
+  ctx.fillText('B', 145, 82)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = canBuyGun ? '#FFF1B8' : '#C5CFDD'
+  ctx.font = `700 10px ${DISPLAY}`
+  ctx.fillText(g.shopOpen ? 'CLOSE' : canBuyGun ? 'NEW GUN' : 'SHOP', 157, 82)
+}
+
+/** One class skill: the key, the name, how long until it is ready and how long its effect has left. */
+function skillPanel(ctx: CanvasRenderingContext2D, x: number, y: number, key: string, skill: SkillDef, cd: number, left: number, color: string, down: boolean) {
+  const ready = cd <= 0 && !down
+  const active = left > 0 && skill.duration >= 1
+  panel(ctx, x, y, 124, 46, 10)
+  // a stripe of the class colour, bright when the skill can be used
+  ctx.fillStyle = ready || active ? color : 'rgba(255,255,255,0.18)'
+  ctx.beginPath()
+  ctx.roundRect(x, y, 4, 46, [10, 0, 0, 10])
+  ctx.fill()
+  // charge bar: fills up while the skill recovers, drains while its effect lasts
+  const fill = active ? left / skill.duration : ready ? 1 : 1 - cd / skill.cooldown
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'
+  ctx.beginPath()
+  ctx.roundRect(x + 12, y + 34, 104, 5, 2.5)
+  ctx.fill()
+  ctx.fillStyle = active || ready ? color : 'rgba(255,255,255,0.35)'
+  ctx.beginPath()
+  ctx.roundRect(x + 12, y + 34, 104 * Math.max(0, Math.min(1, fill)), 5, 2.5)
+  ctx.fill()
+  // key cap
+  ctx.font = `700 9px ${DISPLAY}`
+  const kw = Math.max(16, ctx.measureText(key).width + 8)
+  ctx.fillStyle = ready ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.3)'
+  ctx.beginPath()
+  ctx.roundRect(x + 12, y + 7, kw, 13, 3)
+  ctx.fill()
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#0B1B3A'
+  ctx.fillText(key, x + 12 + kw / 2, y + 17)
+  ctx.textAlign = 'left'
   ctx.fillStyle = ready || active ? '#FFFFFF' : '#8A97AD'
   ctx.font = `700 11px ${DISPLAY}`
-  ctx.fillText(`Shift  ${cls.skill}`, x + 56, y + 17)
-  ctx.font = `500 11px ${BODY}`
-  ctx.fillStyle = ready ? cls.color : '#8A97AD'
-  ctx.fillText(active ? `${p.skillT.toFixed(1)}s` : ready ? 'Ready' : `${Math.ceil(p.skillCd)}s`, x + 56, y + 29)
+  ctx.fillText(skill.name, x + 16 + kw, y + 18, 124 - 24 - kw)
+  ctx.font = `600 10px ${BODY}`
+  ctx.fillStyle = active ? '#FFFFFF' : ready ? color : '#8A97AD'
+  ctx.fillText(active ? `${left.toFixed(1)}s` : ready ? 'Ready' : `${cd < 10 ? cd.toFixed(1) : Math.ceil(cd)}s`, x + 12, y + 30)
+}
+
+/** The two class skills, bottom right: Shift (or Space) above, E (or the right mouse button) below. */
+function drawSkills(ctx: CanvasRenderingContext2D, g: Game) {
+  const p = g.player
+  const cls = CLASSES[p.cls]
+  const x = VIEW_W - 136
+  skillPanel(ctx, x, VIEW_H - 110, 'SHIFT', cls.skills[0], p.skillCd, p.skillT, cls.color, Boolean(p.down))
+  skillPanel(ctx, x, VIEW_H - 58, 'E', cls.skills[1], p.skill2Cd ?? 0, p.skill2T ?? 0, cls.color, Boolean(p.down))
 }
 
 function drawMinimap(ctx: CanvasRenderingContext2D, g: Game) {
   const x0 = 16
-  const y0 = 72
+  const y0 = MAP_Y
   const mapH = Math.round((MAP_W * activeMap.h) / activeMap.w)
   const sx = MAP_W / activeMap.w
   const sy = mapH / activeMap.h
@@ -314,7 +412,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, g: Game) {
   ctx.fillStyle = 'rgba(160,175,200,0.6)'
   for (const o of activeMap.obstacles) ctx.fillRect(x0 + o.x * sx, y0 + o.y * sy, Math.max(1.5, o.w * sx), Math.max(1.5, o.h * sy))
   for (const k of g.pickups) {
-    ctx.fillStyle = k.kind === 'weapon' ? '#F0903C' : k.kind === 'ammo' ? '#4C86E8' : '#2FBF7A'
+    ctx.fillStyle = k.kind === 'weapon' ? '#F0903C' : k.kind === 'ammo' ? '#4C86E8' : k.kind === 'coins' ? '#FFD25A' : '#2FBF7A'
     ctx.fillRect(x0 + k.x * sx - 2, y0 + k.y * sy - 2, 4, 4)
   }
   ctx.fillStyle = '#FF4B57'
@@ -326,6 +424,8 @@ function drawMinimap(ctx: CanvasRenderingContext2D, g: Game) {
   ctx.strokeStyle = 'rgba(255,255,255,0.55)'
   ctx.lineWidth = 1
   ctx.strokeRect(x0 + g.camera.x * sx, y0 + g.camera.y * sy, VIEW_W * sx, VIEW_H * sy)
+  ctx.fillStyle = '#C9A8FF'
+  for (const pet of g.pets) ctx.fillRect(x0 + pet.x * sx - 1.5, y0 + pet.y * sy - 1.5, 3, 3)
   for (const slot of g.slots) {
     ctx.fillStyle = slot.player.down ? '#FF7A85' : slotColor(slot.id)
     ctx.beginPath()

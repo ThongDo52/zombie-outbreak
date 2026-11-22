@@ -12,14 +12,12 @@ const electric = (x: number, y: number, w: number, h: number): Hazard => ({ x, y
 const METRO: Chapter = {
   id: 5,
   name: 'Sunken Metro',
-  subtitle: 'Dark tunnels and live rails. The minigun is waiting on the platform.',
+  subtitle: 'Dark tunnels and live rails. Save your coins for the heavy guns.',
   world: { w: 3400, h: 1800 },
   spawn: { x: 1700, y: 900 },
   waves: 8,
   bossWaves: [4, 8],
   count: 28,
-  newGun: 'minigun',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun'],
   boss: { name: 'TUNNEL STALKER', flesh: '#5C6B8A', aura: '80,140,255' },
   theme: {
     ground: '#1C212B', patch: 'rgba(90,120,200,0.14)', patchKind: 'ash',
@@ -62,14 +60,12 @@ function rooftopBlocks(): Rect[] {
 const ROOFTOPS: Chapter = {
   id: 6,
   name: 'Quarantine Rooftops',
-  subtitle: 'Walled alleys and burning vents. The railgun pierces the whole street.',
+  subtitle: 'Walled alleys and burning vents. Nowhere to run, so make every coin count.',
   world: { w: 3600, h: 2000 },
   spawn: { x: 1780, y: 980 },
   waves: 9,
   bossWaves: [3, 6, 9],
   count: 32,
-  newGun: 'railgun',
-  loot: ['shotgun', 'rifle', 'flamer', 'launcher', 'minigun', 'railgun'],
   boss: { name: 'ROOFTOP WARDEN', flesh: '#8A5C3A', aura: '255,160,60' },
   theme: {
     ground: '#2A2733', patch: 'rgba(255,140,60,0.12)', patchKind: 'ash',
@@ -100,8 +96,6 @@ const LAB: Chapter = {
   waves: 10,
   bossWaves: [5, 10],
   count: 36,
-  newGun: 'launcher',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun', 'railgun'],
   boss: { name: 'PATIENT ZERO', flesh: '#A8587E', aura: '255,60,160' },
   theme: {
     ground: '#1E2A2A', patch: 'rgba(255,60,160,0.10)', patchKind: 'toxic',

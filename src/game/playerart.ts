@@ -1,3 +1,4 @@
+import { CLASSES, type ClassId } from './classes'
 import { drawGun, type GunPalette } from './gunart'
 import { hueColor, type CharacterLook } from './skins'
 import type { WeaponId } from './types'
@@ -41,6 +42,8 @@ export function drawCharacter(
   weapon: WeaponId,
   gun: GunPalette | undefined,
   pose: CharacterPose,
+  /** The class whose gear is worn over the skin (in the arena). Shop previews leave it out. */
+  gear?: ClassId,
 ) {
   ellipse(ctx, x, y + 11, 14, 6, 'rgba(0,0,0,0.38)')
   const aura = look.aura === 'rainbow' ? hueColor(t, 0, 0.4) : look.aura
@@ -56,6 +59,7 @@ export function drawCharacter(
   ctx.translate(x, y)
   ctx.rotate(angle)
   drawBackFx(ctx, look, t)
+  if (gear) drawGearBack(ctx, gear, t, pose)
   if (pose.dashing) {
     ctx.fillStyle = 'rgba(127,176,255,0.25)'
     for (let i = 1; i <= 3; i++) ctx.fillRect(-i * 12 - 8, -10, 14, 20)
@@ -99,6 +103,8 @@ export function drawCharacter(
     ctx.fillRect(1, -11, 2, 22)
   }
 
+  if (gear) drawGearFront(ctx, gear, t)
+
   if (weapon !== 'fists') {
     ctx.save()
     ctx.translate(9, 0)
@@ -116,6 +122,175 @@ export function drawCharacter(
   drawHeadExtras(ctx, look, t)
   drawFrontFx(ctx, look, t, angle)
   ctx.restore()
+}
+
+/**
+ * Class gear worn behind the body, so each role can be told apart at a glance whatever skin is on:
+ * the Runner's scarf, the Medic's pack, the Sniper's cape, the Warlock's robe. Drawn in the rotated frame (+x is forward).
+ */
+function drawGearBack(ctx: CanvasRenderingContext2D, gear: ClassId, t: number, pose: CharacterPose) {
+  const color = CLASSES[gear].color
+  switch (gear) {
+    case 'agile': {
+      // a scarf that streams out behind and whips about on the move
+      const wave = Math.sin(t * (pose.moving ? 16 : 5)) * (pose.moving ? 5 : 2)
+      const len = pose.moving || pose.dashing ? 21 : 14
+      ctx.strokeStyle = color
+      ctx.lineCap = 'round'
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.moveTo(-3, -3)
+      ctx.quadraticCurveTo(-len * 0.5, -3 + wave, -len, -1 - wave)
+      ctx.stroke()
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.moveTo(-3, 2)
+      ctx.quadraticCurveTo(-len * 0.45, 3 - wave, -len * 0.8, 4 + wave)
+      ctx.stroke()
+      break
+    }
+    case 'support': {
+      // field pack with a cross
+      ctx.fillStyle = '#E9EEF5'
+      ctx.beginPath()
+      ctx.roundRect(-15, -7, 9, 14, 2.5)
+      ctx.fill()
+      ctx.fillStyle = '#C8D2E0'
+      ctx.fillRect(-15, 4, 9, 3)
+      ctx.fillStyle = '#E5484D'
+      ctx.fillRect(-11.6, -4.2, 2.2, 8.4)
+      ctx.fillRect(-14.7, -1.1, 8.4, 2.2)
+      break
+    }
+    case 'sniper': {
+      // a ragged camouflage cape
+      const sway = Math.sin(t * (pose.moving ? 9 : 3)) * 1.5
+      ctx.fillStyle = '#4E5A34'
+      ctx.beginPath()
+      ctx.moveTo(-2, -11)
+      ctx.lineTo(-19, -12 + sway)
+      ctx.lineTo(-15, -6)
+      ctx.lineTo(-22, -1 - sway)
+      ctx.lineTo(-16, 3)
+      ctx.lineTo(-20, 10 + sway)
+      ctx.lineTo(-2, 11)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = '#6B7A44'
+      ctx.fillRect(-13, -7, 5, 3)
+      ctx.fillRect(-11, 3, 6, 3)
+      ctx.fillStyle = '#3A4326'
+      ctx.fillRect(-16, -1, 4, 2.5)
+      break
+    }
+    case 'summoner': {
+      // a robe that trails behind, with a glowing hem
+      const sway = Math.sin(t * (pose.moving ? 8 : 2.5)) * 2
+      ctx.fillStyle = '#3A2A6E'
+      ctx.beginPath()
+      ctx.moveTo(0, -11)
+      ctx.quadraticCurveTo(-14, -15 + sway, -22, -7 + sway)
+      ctx.quadraticCurveTo(-25, 0, -22, 7 - sway)
+      ctx.quadraticCurveTo(-14, 15 - sway, 0, 11)
+      ctx.closePath()
+      ctx.fill()
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.strokeStyle = 'rgba(185,140,255,0.75)'
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      ctx.moveTo(-21, -7 + sway)
+      ctx.quadraticCurveTo(-25, 0, -21, 7 - sway)
+      ctx.stroke()
+      ctx.restore()
+      break
+    }
+    default:
+      break
+  }
+}
+
+/** Class gear worn over the body: the Bulwark's shoulder plates, the Striker's bandolier, the Warlock's pendant. */
+function drawGearFront(ctx: CanvasRenderingContext2D, gear: ClassId, t: number) {
+  const color = CLASSES[gear].color
+  switch (gear) {
+    case 'tank':
+      // heavy steel shoulder plates with a blue edge
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#9AA9C0'
+        ctx.beginPath()
+        ctx.ellipse(-1, side * 11.5, 6.5, 4.6, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#5E6C84'
+        ctx.beginPath()
+        ctx.ellipse(-2.5, side * 12.2, 4.5, 2.6, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.3
+        ctx.beginPath()
+        ctx.ellipse(-1, side * 11.5, 6.5, 4.6, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.fillStyle = '#7C8AA3'
+      ctx.fillRect(-9, -5, 4, 10)
+      break
+    case 'damage':
+      // an ammunition belt across the chest
+      ctx.strokeStyle = '#4A2A20'
+      ctx.lineWidth = 3.2
+      ctx.lineCap = 'butt'
+      ctx.beginPath()
+      ctx.moveTo(-6, -11)
+      ctx.lineTo(6, 11)
+      ctx.stroke()
+      ctx.fillStyle = '#E8C34A'
+      for (let i = 0; i < 4; i++) ctx.fillRect(-5 + i * 3.1, -8.6 + i * 5.6, 2, 2.6)
+      ctx.fillStyle = color
+      ctx.fillRect(-9, -2, 3, 4)
+      break
+    case 'sniper':
+      // a shoulder pad for the rifle butt
+      ctx.fillStyle = '#6B7A44'
+      ctx.beginPath()
+      ctx.ellipse(0, 10.5, 5.2, 3.6, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = color
+      ctx.fillRect(-8, -2, 2.5, 4)
+      break
+    case 'summoner': {
+      // a pendant that pulses, and light gathering in the hands
+      const pulse = 0.6 + 0.4 * Math.sin(t * 4)
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      glow(ctx, 4, 0, 7 + pulse * 2, `rgba(185,140,255,${0.55 * pulse})`)
+      glow(ctx, 14, -6.5, 6, `rgba(210,180,255,${0.35 + 0.25 * pulse})`)
+      glow(ctx, 14, 6.5, 6, `rgba(210,180,255,${0.35 + 0.25 * (1 - pulse)})`)
+      ctx.restore()
+      ctx.fillStyle = '#E6DEFF'
+      ctx.beginPath()
+      ctx.moveTo(4, -2.6)
+      ctx.lineTo(6.4, 0)
+      ctx.lineTo(4, 2.6)
+      ctx.lineTo(1.6, 0)
+      ctx.closePath()
+      ctx.fill()
+      break
+    }
+    case 'agile':
+      // the knot of the scarf
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.ellipse(-4, 0, 3.2, 6.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+      break
+    case 'support':
+      // pack straps and an armband
+      ctx.fillStyle = '#C8D2E0'
+      ctx.fillRect(-7, -10, 2, 20)
+      ctx.fillStyle = color
+      ctx.fillRect(3, 4, 5, 5)
+      break
+  }
 }
 
 const NO_FX: readonly string[] = []

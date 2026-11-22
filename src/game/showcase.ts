@@ -1,3 +1,4 @@
+import type { ClassId } from './classes'
 import { WEAPON_ORDER } from './config'
 import { freeSpot } from './collision'
 import { Game } from './engine'
@@ -12,16 +13,17 @@ import { activeMap } from './world'
  * Nothing here is saved, paid for or sent anywhere.
  */
 
-const SQUAD: { name: string; character: number; gun: number; effect: number }[] = [
-  { name: 'Rook', character: 407, gun: 507, effect: 302 },
-  { name: 'Vex', character: 406, gun: 506, effect: 303 },
-  { name: 'Juno', character: 405, gun: 505, effect: 301 },
-  { name: 'Kade', character: 105, gun: 204, effect: 302 },
-  { name: 'Mara', character: 106, gun: 206, effect: 301 },
+/** One survivor of every kind, so the title screen shows shields, wolves, a stone guardian and marks as well as guns. */
+const SQUAD: { name: string; character: number; gun: number; effect: number; cls: ClassId }[] = [
+  { name: 'Rook', character: 407, gun: 507, effect: 302, cls: 'tank' },
+  { name: 'Vex', character: 406, gun: 506, effect: 303, cls: 'summoner' },
+  { name: 'Juno', character: 405, gun: 505, effect: 301, cls: 'damage' },
+  { name: 'Kade', character: 105, gun: 204, effect: 302, cls: 'sniper' },
+  { name: 'Mara', character: 106, gun: 206, effect: 301, cls: 'support' },
 ]
 
 /** Guns the survivors cycle through, so the whole arsenal gets a turn. */
-const ROTATION: WeaponId[] = ['smg', 'shotgun', 'rifle', 'flamer', 'launcher', 'minigun', 'railgun', 'venom', 'tesla', 'cryo']
+const ROTATION: WeaponId[] = ['smg', 'shotgun', 'rifle', 'sniper', 'flamer', 'launcher', 'minigun', 'railgun', 'venom', 'tesla', 'cryo', 'wand']
 
 interface Bot {
   slot: PlayerSlot
@@ -50,6 +52,7 @@ export function createShowcase(): Showcase {
     const slot = game.addSlot(s.name, i + 1)
     if (!slot) return
     slot.skin = { character: s.character, gun: s.gun, effect: s.effect }
+    slot.cls = s.cls
   })
   game.localId = 1
   game.startDescent()
@@ -106,6 +109,9 @@ export function createShowcase(): Showcase {
     if (Math.abs(dx) > 14) keys |= dx < 0 ? 4 : 8
     b.keys = keys
     if (target && nearest < 70 && p.skillCd <= 0 && Math.random() < 0.5) game.queueSkill(b.slot.id)
+    // a Warlock keeps its wolves out; everyone throws in their second skill now and then
+    if (p.cls === 'summoner' && p.skillCd <= 0 && game.pets.filter((x) => x.owner === b.slot.id && x.kind === 'wolf').length < 2) game.queueSkill(b.slot.id)
+    if (target && p.skill2Cd <= 0 && Math.random() < 0.06) game.queueSkill(b.slot.id, 2)
   }
 
   // New zombies appear just outside the picture, so there is always a horde closing in.
@@ -138,8 +144,20 @@ export function createShowcase(): Showcase {
     game.sound('boss')
   }
 
+  const arm = () => {
+    for (const b of bots) {
+      for (const w of WEAPON_ORDER) {
+        b.slot.player.owned[w] = true
+        b.slot.player.ammo[w] = 9999
+      }
+    }
+  }
+
   const step = (dt: number) => {
-    if (game.status !== 'playing') game.startDescent()
+    if (game.status !== 'playing') {
+      game.startDescent()
+      arm()
+    }
     const c = centroid()
     stageZombies(c)
     cameo(c, dt)

@@ -3,9 +3,11 @@ import type { WeaponId } from './types'
 /** Horizontal extent [start, end] of each gun, with the grip at x = 0. */
 const BOUNDS: Record<Exclude<WeaponId, 'fists'>, [number, number]> = {
   pistol: [-3, 18],
+  wand: [-6, 27],
   smg: [-4, 30],
   shotgun: [-14, 38],
   rifle: [-16, 44],
+  sniper: [-18, 52],
   flamer: [-14, 40],
   launcher: [-12, 38],
   minigun: [-12, 44],
@@ -41,6 +43,46 @@ export function drawGun(ctx: CanvasRenderingContext2D, id: WeaponId, palette: Gu
       box(ctx, -3, -4, 21, 6, LIGHT)
       box(ctx, -3, -4, 21, 2, '#C3CDDD')
       box(ctx, 14, -2, 4, 4, METAL)
+      break
+    case 'wand': {
+      // a short carved staff: bound grip, a silver setting and a crystal that glows
+      box(ctx, -6, -2, 22, 4, WOOD)
+      box(ctx, -6, -2, 22, 1.2, 'rgba(255,255,255,0.2)')
+      box(ctx, -1, -3, 3, 6, DARK)
+      box(ctx, 6, -3, 2, 6, DARK)
+      box(ctx, 14, -4, 4, 8, LIGHT)
+      ctx.fillStyle = '#B98CFF'
+      ctx.beginPath()
+      ctx.moveTo(17, 0)
+      ctx.lineTo(22, -5)
+      ctx.lineTo(27, 0)
+      ctx.lineTo(22, 5)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = '#F4E8FF'
+      ctx.beginPath()
+      ctx.moveTo(19.5, 0)
+      ctx.lineTo(22, -2.6)
+      ctx.lineTo(24.5, 0)
+      ctx.lineTo(22, 2.6)
+      ctx.closePath()
+      ctx.fill()
+      break
+    }
+    case 'sniper':
+      // long barrel, a scope with a blue lens, a folded bipod
+      box(ctx, -18, -3, 15, 7, WOOD)
+      box(ctx, -18, -3, 5, 10, WOOD)
+      box(ctx, -4, -4, 27, 7, METAL)
+      box(ctx, -4, -4, 27, 2, LIGHT)
+      box(ctx, 23, -2, 25, 3, DARK)
+      box(ctx, 47, -3.5, 5, 6, METAL)
+      box(ctx, 1, -10.5, 21, 4.5, '#10151F')
+      box(ctx, 4, -6, 2.5, 2.5, '#10151F')
+      box(ctx, 16, -6, 2.5, 2.5, '#10151F')
+      box(ctx, 20, -10, 2.5, 3.5, '#7FD0FF')
+      box(ctx, 8, 3, 5, 9, DARK)
+      box(ctx, 31, 1, 2, 7, DARK)
       break
     case 'smg':
       box(ctx, -4, -4, 24, 8, METAL)

@@ -3,17 +3,20 @@ import { DEFAULT_CLASS, SKILL, isClassId, type ClassId } from './classes'
 import { CHAPTERS, LEVEL_OFFSETS } from './chapters'
 import { resolveHitboxes, updateBullets, updateBurning, updateEnemyShots } from './combat'
 import { DIFFICULTY, type Difficulty, type DifficultyDef, survivalDifficulty } from './difficulty'
-import { VIEW_H, VIEW_W, WAVE, WEAPON_ORDER, WEAPONS } from './config'
+import { VIEW_H, VIEW_W, WAVE, WEAPON_ORDER, WEAPONS, ZOMBIES } from './config'
 import { collectPickups, seedPickups, tickPickups } from './pickups'
 import { updateFlow } from './pathing'
 import { buildFloor, DESCENT, floorBossMultiplier, floorDifficulty, floorLevel, floorMap, isBossFloor } from './descent'
+import { PETS, updatePets } from './pets'
 import { applyArmorBoost, applyHealBoost, checkContact, giveLoadout, newPlayer, updateHazards, updateSlot } from './players'
 import { applyEvent, updateVisuals, smoothReplica } from './replica'
+import { buyItem, grantCoins, isShopItem, shopEntries, SHOP, stipendFor } from './shop'
 import { DEFAULT_SELECTION, type SkinSelection } from './skins'
 import type {
   BoostCharges,
   BoostKind,
   Bullet,
+  CoinFx,
   Control,
   Decal,
   Effect,
@@ -23,7 +26,10 @@ import type {
   EnemyShot,
   GameSummary,
   Hitbox,
+  HitSource,
+  Light,
   Particle,
+  Pet,
   Pickup,
   Player,
   PlayerInput,
@@ -32,6 +38,7 @@ import type {
   SavedRun,
   SoundEvent,
   SoundType,
+  Target,
   Vec,
   WeaponId,
   Zombie,
@@ -53,6 +60,7 @@ function newSlot(id: number, name: string, spawn: Vec): PlayerSlot {
     autoAim: false,
     aimScreen: { x: VIEW_W / 2 + 120, y: VIEW_H / 2 },
     queuedSkill: false,
+    queuedSkill2: false,
     skin: { ...DEFAULT_SELECTION },
     charges: { life: 0, heal: 0, armor: 0 },
     camera: { x: 0, y: 0 },
@@ -80,12 +88,23 @@ export class Game {
   /** Venom clouds on the ground. */
   zones: Zone[] = []
   shots: EnemyShot[] = []
+  /** Creatures summoned by the players. */
+  pets: Pet[] = []
+  /** Zombies born in the middle of a tick (a Brood's mites, a Screamer's runners). They join the horde when the tick ends. */
+  births: Zombie[] = []
   hitboxes: Hitbox[] = []
   pickups: Pickup[] = []
   particles: Particle[] = []
   decals: Decal[] = []
   effects: Effect[] = []
   texts: FloatText[] = []
+  /** Visual only: brief lights (muzzle flashes, explosions, spells) and coins flying to the counter. */
+  lights: Light[] = []
+  coinFx: CoinFx[] = []
+  /** Visual only: the coin counter bumps when a flying coin lands in it. */
+  coinPulse = 0
+  /** This screen has the shop open (B). Solo play is paused meanwhile; a co-op room keeps going. */
+  shopOpen = false
   /** Server only: cosmetic events waiting to be sent to the clients. */
   events: GameEvent[] = []
   bossWave = false
@@ -104,6 +123,15 @@ export class Game {
   nextId = 1
   pickupTimer = 6
   spawnQueue: ZombieKind[] = []
+  /** How long the last handful of a wave has been holding out. */
+  lastStand = 0
+  /**
+   * The last few zombies of a wave stop hanging back after a while: Spitters, Mortars, Shamans and Screamers
+   * close in and Lurkers stop circling, so a wave never drags on while one of them sulks behind a wall.
+   */
+  get hunt(): boolean {
+    return this.lastStand > 12
+  }
   spawnTimer = 0
   intermission = 0
   /** Endless Descent: floors instead of chapters and waves. */
@@ -121,7 +149,7 @@ export class Game {
   onBoostUsed?: (kind: BoostKind, slotId: number) => void
 
   /** Co-op client: one-shot actions waiting to be sent to the server. */
-  actions: { skill: boolean; heal: boolean; armor: boolean; weapon?: WeaponId } = { skill: false, heal: false, armor: false }
+  actions: { skill: boolean; skill2: boolean; heal: boolean; armor: boolean; weapon?: WeaponId; buy?: string } = { skill: false, skill2: false, heal: false, armor: false }
 
   private dummy: PlayerSlot = newSlot(0, 'You', CHAPTERS[0].spawn)
 
@@ -223,17 +251,48 @@ export class Game {
     return best ?? this.player
   }
 
+  /**
+   * What a zombie at (x, y) goes for: the closest player, or a Summoner's pet that is in its way.
+   * A stone guardian pulls in everything around it; wolves only draw the zombies they are right next to.
+   */
+  nearestTarget(x: number, y: number): Target {
+    const lead = this.nearestPlayer(x, y)
+    if (this.pets.length === 0) return lead
+    let best: Target = lead
+    let bestD = (lead.x - x) ** 2 + (lead.y - y) ** 2
+    if (lead.cls === 'tank' && lead.skillT > 0 && bestD < SKILL.shield.taunt ** 2) bestD *= 0.1
+    if (lead.down) bestD = Infinity
+    for (const pet of this.pets) {
+      if (pet.hp <= 0) continue
+      let d = (pet.x - x) ** 2 + (pet.y - y) ** 2
+      if (pet.kind === 'golem') {
+        if (d < PETS.golem.taunt ** 2) d *= 0.08
+      } else d *= 1.6
+      if (d < bestD) {
+        bestD = d
+        best = pet
+      }
+    }
+    return best
+  }
+
+  /** Damage this zombie does by touch right now. A Leaper in the air touches nothing until it lands. */
+  contactDamage(z: Zombie): number {
+    if (z.kind === 'leaper' && z.state === 'strike') return 0
+    return ZOMBIES[z.kind].contact * this.diff.damage
+  }
+
   addSlot(name: string, id?: number): PlayerSlot | undefined {
     if (this.slots.length >= MAX_PLAYERS) return undefined
     const slotId = id ?? Math.max(0, ...this.slots.map((s) => s.id)) + 1
     const slot = newSlot(slotId, name, this.spawnFor(this.slots.length))
-    giveLoadout(slot.player, activeMap.index)
     this.slots.push(slot)
     return slot
   }
 
   removeSlot(id: number) {
     this.slots = this.slots.filter((s) => s.id !== id)
+    this.pets = this.pets.filter((p) => p.owner !== id)
   }
 
   private spawnFor(index: number): Vec {
@@ -253,15 +312,21 @@ export class Game {
     this.difficulty = difficulty
     this.slots.forEach((slot, i) => {
       slot.player = newPlayer(this.spawnFor(i), slot.cls)
-      giveLoadout(slot.player, activeMap.index, slot.unlocked)
+      // starting at a later chapter comes with the coins the earlier ones would have paid
+      giveLoadout(slot.player, stipendFor(activeMap.index), slot.unlocked)
       this.grantTestGuns(slot.player)
-      slot.keys.clear()
-      slot.firing = false
-      slot.queuedSkill = false
+      this.resetInput(slot)
     })
     this.score = 0
     this.kills = 0
     this.enterChapter()
+  }
+
+  private resetInput(slot: PlayerSlot) {
+    slot.keys.clear()
+    slot.firing = false
+    slot.queuedSkill = false
+    slot.queuedSkill2 = false
   }
 
   /** Survival: one map, endless waves that keep getting harder, until the whole squad is down. */
@@ -280,11 +345,9 @@ export class Game {
     const t = activeMap.chapter.trial
     this.slots.forEach((slot, i) => {
       slot.player = newPlayer(this.spawnFor(i), slot.cls)
-      giveLoadout(slot.player, (t?.requires ?? 0) + 1, slot.unlocked.filter((w) => w !== t?.weapon))
+      giveLoadout(slot.player, stipendFor((t?.requires ?? 0) + 1), slot.unlocked.filter((w) => w !== t?.weapon))
       this.grantTestGuns(slot.player)
-      slot.keys.clear()
-      slot.firing = false
-      slot.queuedSkill = false
+      this.resetInput(slot)
     })
     this.score = 0
     this.kills = 0
@@ -302,10 +365,9 @@ export class Game {
     setChapter(floorMap(1))
     this.slots.forEach((slot, i) => {
       slot.player = newPlayer(this.spawnFor(i), slot.cls)
-      giveLoadout(slot.player, DESCENT.loadoutChapter)
-      slot.keys.clear()
-      slot.firing = false
-      slot.queuedSkill = false
+      // everyone enters equal: the same purse, no heavy weapons from outside
+      giveLoadout(slot.player, SHOP.descentStipend)
+      this.resetInput(slot)
     })
     this.score = 0
     this.kills = 0
@@ -342,22 +404,32 @@ export class Game {
 
   private enterChapter() {
     this.zombies = []
+    this.births = []
     this.bullets = []
     this.zones = []
     this.shots = []
+    this.pets = []
     this.hitboxes = []
     this.pickups = []
     this.particles = []
     this.decals = []
     this.effects = []
     this.texts = []
+    this.lights = []
+    this.coinFx = []
+    this.shopOpen = false
+    for (const s of this.slots) {
+      s.player.skillT = 0
+      s.player.skill2T = 0
+    }
     this.spawnQueue = []
     this.wave = 0
     this.runTime = 0
     this.banner = 0
     this.bossWave = false
     this.chapterBanner = 3.4
-    this.intermission = 2
+    // a moment to visit the shop before the first wave, a little longer when there are coins to spend
+    this.intermission = this.slots.some((s) => s.player.coins >= 140) ? 4.5 : 2.5
     this.pickupTimer = 6 * this.diff.pickupInterval
     for (const s of this.slots) s.firing = false
     this.centerCamera()
@@ -395,13 +467,38 @@ export class Game {
     if (slot && isClassId(cls)) slot.cls = cls
   }
 
-  queueSkill(id = this.localId) {
+  /** Use a class skill: 1 is the one on Shift or Space, 2 the one on E or the right mouse button. */
+  queueSkill(id = this.localId, which: 1 | 2 = 1) {
     if (this.mode === 'replica') {
-      if (this.status === 'playing') this.actions.skill = true
+      if (this.status !== 'playing') return
+      if (which === 2) this.actions.skill2 = true
+      else this.actions.skill = true
       return
     }
     const slot = this.slotById(id)
-    if (slot && this.status === 'playing') slot.queuedSkill = true
+    if (!slot || this.status !== 'playing') return
+    if (which === 2) slot.queuedSkill2 = true
+    else slot.queuedSkill = true
+  }
+
+  /** Buy a line of the shop (`gun:<weapon>`, `ammo` or `medkit`). Returns false when it cannot be bought. */
+  buy(item: string, id = this.localId): boolean {
+    const slot = this.slotById(id)
+    if (!slot || this.status !== 'playing' || !isShopItem(item)) return false
+    if (this.mode === 'replica') {
+      // the room does the buying; this only checks that it is worth asking
+      const entry = shopEntries(slot.player).find((e) => e.id === item)
+      if (!entry || entry.blocked || slot.player.down) return false
+      this.actions.buy = item
+      return true
+    }
+    return buyItem(this, slot, item)
+  }
+
+  /** Open or close the shop on this screen. */
+  setShop(open: boolean) {
+    this.shopOpen = open && this.status === 'playing' && !this.player.down
+    if (this.shopOpen) this.local.firing = false
   }
 
   equip(weapon: WeaponId, id = this.localId) {
@@ -477,7 +574,9 @@ export class Game {
     if (input.keys & 8) slot.keys.add('right')
     slot.firing = input.fire && !slot.player.down
     if (Number.isFinite(input.ax) && Number.isFinite(input.ay)) slot.aimWorld = { x: input.ax, y: input.ay }
-    if (input.skill) this.queueSkill(id)
+    if (input.skill) this.queueSkill(id, 1)
+    if (input.skill2) this.queueSkill(id, 2)
+    if (input.buy) this.buy(input.buy, id)
     if (input.weapon) this.equip(input.weapon, id)
     if (input.heal) this.useHeal(id)
     if (input.armor) this.useArmor(id)
@@ -495,8 +594,9 @@ export class Game {
     this.cosmetic({ t: 'snd', type, x, y, kind })
   }
 
-  text(x: number, y: number, text: string, color: string) {
-    this.cosmetic({ t: 'text', x, y, text, color })
+  /** Floating text. `big` 1 is a heavy hit or an announcement, 2 a headline. With `slot`, only that player sees it. */
+  text(x: number, y: number, text: string, color: string, big?: 1 | 2, slot?: number) {
+    this.cosmetic({ t: 'text', x, y, text, color, big, slot })
   }
 
   /** Screen shake; with a slot id it only shakes that player's screen. */
@@ -512,8 +612,8 @@ export class Game {
     this.cosmetic({ t: 'burst', x, y, color, n })
   }
 
-  addHitbox(rect: Rect, owner: Hitbox['owner'], damage: number, stun: number, knockback: number, life: number, sourceId?: number, ownerId?: number) {
-    this.hitboxes.push({ rect, owner, damage, stun, knockback, life, maxLife: life, hitIds: new Set(), sourceId, ownerId: owner === 'player' ? (ownerId ?? this.localId) : undefined })
+  addHitbox(rect: Rect, owner: Hitbox['owner'], damage: number, stun: number, knockback: number, life: number, sourceId?: number, ownerId?: number, src?: HitSource) {
+    this.hitboxes.push({ rect, owner, damage, stun, knockback, life, maxLife: life, hitIds: new Set(), sourceId, ownerId: owner === 'player' ? (ownerId ?? this.localId) : undefined, src })
   }
 
   // ---------- Status ----------
@@ -539,7 +639,13 @@ export class Game {
       smoothReplica(this, dt)
       return
     }
-    if (this.status !== 'playing') return
+    if (this.status !== 'playing') {
+      this.shopOpen = false
+      return
+    }
+    if (this.player.down) this.shopOpen = false
+    // shopping alone stops the clock; a co-op room cannot wait for one player
+    if (this.shopOpen && this.mode === 'solo' && this.slots.length === 1) return
     this.runTime += dt
     if (this.banner > 0) this.banner -= dt
     if (this.chapterBanner > 0) this.chapterBanner -= dt
@@ -558,12 +664,19 @@ export class Game {
     tickPickups(this, dt)
     for (const slot of this.slots) collectPickups(this, slot)
     updateFlow(this.alivePlayers(), dt)
+    const few = this.spawnQueue.length === 0 && this.zombies.length > 0 && this.zombies.length <= 4 && !this.zombies.some((z) => z.kind === 'boss')
+    this.lastStand = few ? this.lastStand + dt : 0
     updateBurning(this, dt)
+    updatePets(this, dt)
     for (const z of this.zombies) updateZombie(this, z, dt)
     for (const slot of this.slots) checkContact(this, slot)
     updateBullets(this, dt)
     updateEnemyShots(this, dt)
     resolveHitboxes(this, dt)
+    if (this.births.length > 0) {
+      this.zombies.push(...this.births)
+      this.births = []
+    }
     if (this.mode === 'solo') this.updateCamera(dt)
   }
 
@@ -611,13 +724,20 @@ export class Game {
     }
     if (this.intermission <= 0) {
       this.intermission = WAVE.intermission
-      if (this.wave > 0 && this.diff.healBetween > 0) {
+      if (this.wave > 0) {
+        // a cleared wave pays everyone, so the shop has something new between waves
+        const bonus = SHOP.waveBonus + SHOP.wavePerWave * Math.min(this.wave, 25)
+        grantCoins(this, bonus, undefined, undefined, false)
         for (const s of this.slots) {
           const p = s.player
           if (p.down) continue
-          p.hp = Math.min(p.maxHp, p.hp + this.diff.healBetween)
-          this.text(p.x, p.y - 24, `+${this.diff.healBetween} HP`, '#6EE7A8')
+          this.text(p.x, p.y - 40, `Wave cleared  +${bonus} coins`, '#FFD25A', 1, s.id)
+          if (this.diff.healBetween > 0) {
+            p.hp = Math.min(p.maxHp, p.hp + this.diff.healBetween)
+            this.text(p.x, p.y - 24, `+${this.diff.healBetween} HP`, '#6EE7A8')
+          }
         }
+        this.sound('coin')
       }
       return
     }
@@ -658,6 +778,7 @@ export class Game {
       this.floorsCleared += 1
       this.intermission = DESCENT.intermission
       this.score += 100 * this.floor
+      grantCoins(this, 60 + 15 * Math.min(this.floor, 30), undefined, undefined, false)
       this.sound('cleared')
       for (const s of this.slots) {
         const p = s.player
@@ -689,9 +810,11 @@ export class Game {
     if (map !== activeMap.index || this.floor === 1) {
       setChapter(map)
       this.zombies = []
+      this.births = []
       this.bullets = []
-    this.zones = []
-    this.shots = []
+      this.zones = []
+      this.shots = []
+      this.pets = []
       this.hitboxes = []
       this.decals = []
       this.effects = []
@@ -745,6 +868,7 @@ export class Game {
       return
     }
     this.score += 500 * (activeMap.index + 1)
+    grantCoins(this, SHOP.chapterBonus, undefined, undefined, false)
     this.bullets = []
     this.zones = []
     this.shots = []
@@ -795,6 +919,11 @@ export class Game {
       ...s.player,
       owned: { ...base.owned, ...s.player.owned },
       ammo: { ...base.ammo, ...s.player.ammo },
+      gunLv: { ...base.gunLv, ...s.player.gunLv },
+      // a run saved before the shop existed gets the purse its chapter would have started with
+      coins: s.player.coins ?? stipendFor(s.chapterIndex),
+      skill2Cd: 0,
+      skill2T: 0,
       invuln: 2,
       vx: 0,
       vy: 0,
@@ -808,15 +937,20 @@ export class Game {
       stateTime: 0,
     }
     this.zombies = s.zombies
+    this.births = []
     this.pickups = s.pickups
     this.decals = s.decals
     this.effects = []
     this.bullets = []
     this.zones = []
     this.shots = []
+    this.pets = []
     this.hitboxes = []
     this.particles = []
     this.texts = []
+    this.lights = []
+    this.coinFx = []
+    this.shopOpen = false
     this.wave = s.wave
     this.score = s.score
     this.kills = s.kills
@@ -827,6 +961,7 @@ export class Game {
     this.nextId = s.nextId
     this.banner = 0
     this.local.queuedSkill = false
+    this.local.queuedSkill2 = false
     this.local.firing = false
     this.chapterBanner = 0
     this.centerCamera()

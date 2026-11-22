@@ -1,11 +1,11 @@
 import { CHAPTERS } from '@/game/chapters'
 import { DEFAULT_CLASS, isClassId, type ClassId } from '@/game/classes'
-import { WEAPON_ORDER } from '@/game/config'
 import { DIFFICULTIES, type Difficulty } from '@/game/difficulty'
 import { Game } from '@/game/engine'
 import { makeSnapshot } from '@/game/replica'
 import type { SkinSelection } from '@/game/skins'
-import type { BoostCharges, GameStatus, PlayerInput, WeaponId } from '@/game/types'
+import type { BoostCharges, GameStatus, WeaponId } from '@/game/types'
+import { validInput } from './input'
 import type { JoinClaim, Verified } from './ownership'
 import { RECONNECT_SECONDS, STORY_ROOM_SIZE, signInMessage, type ClientMessage, type RoomPhase, type RoomState, type ServerMessage } from './protocol'
 import type { Link } from './transport'
@@ -52,16 +52,6 @@ const randomHex = (bytes: number) => {
   const a = new Uint8Array(bytes)
   crypto.getRandomValues(a)
   return [...a].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-function validInput(m: Record<string, unknown>): PlayerInput | null {
-  const keys = m.keys
-  const ax = m.ax
-  const ay = m.ay
-  if (typeof keys !== 'number' || keys < 0 || keys > 15 || typeof ax !== 'number' || typeof ay !== 'number') return null
-  if (!Number.isFinite(ax) || !Number.isFinite(ay) || Math.abs(ax) > 20000 || Math.abs(ay) > 20000) return null
-  const weapon = typeof m.weapon === 'string' && (WEAPON_ORDER as string[]).includes(m.weapon) ? (m.weapon as PlayerInput['weapon']) : undefined
-  return { keys: keys | 0, fire: m.fire === true, ax, ay, skill: m.skill === true, weapon, heal: m.heal === true, armor: m.armor === true }
 }
 
 export class RoomCore {

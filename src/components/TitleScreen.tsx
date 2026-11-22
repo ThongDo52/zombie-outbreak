@@ -169,7 +169,9 @@ function Hand({ className }: { className: string }) {
 const CONTROLS: { keys: string[]; label: string }[] = [
   { keys: ['W', 'A', 'S', 'D'], label: 'Move' },
   { keys: ['Mouse'], label: 'Aim and shoot' },
-  { keys: ['Shift'], label: 'Class skill' },
+  { keys: ['Shift'], label: 'First class skill' },
+  { keys: ['E'], label: 'Second class skill (or right mouse button)' },
+  { keys: ['B'], label: 'Shop: guns, upgrades, ammo' },
   { keys: ['F'], label: 'Heal boost' },
   { keys: ['G'], label: 'Armor boost' },
   { keys: ['1', '2', '3'], label: 'Pick a weapon' },
@@ -219,7 +221,7 @@ function HowTo({ onClose }: { onClose: () => void }) {
         </ul>
         <ol className="mt-5 space-y-2 border-t border-white/10 pt-4 text-sm text-slate-300">
           <li>
-            <b className="text-white">1.</b> Solo play needs no wallet. Find a gun on the ground and hold the street.
+            <b className="text-white">1.</b> Solo play needs no wallet. Pick a class, earn coins from every kill and buy your guns in the shop.
           </li>
           <li>
             <b className="text-white">2.</b> A wallet unlocks skins, boosts, boxes, the market and co-op.
@@ -232,7 +234,7 @@ function HowTo({ onClose }: { onClose: () => void }) {
             .
           </li>
         </ol>
-        <p className="mt-4 text-pretty text-xs text-slate-500">On a phone you get an on-screen pad, a fire button and swap and dash buttons.</p>
+        <p className="mt-4 text-pretty text-xs text-slate-500">On a phone you get an on-screen pad, a fire button, and buttons for both skills, the shop and swapping guns.</p>
       </div>
     </div>
   )

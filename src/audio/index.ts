@@ -19,6 +19,13 @@ const COOLDOWN: Partial<Record<SoundType, number>> = {
   burst: 0.15,
   chant: 0.5,
   skill: 0.15,
+  coin: 0.07,
+  clang: 0.07,
+  petbite: 0.09,
+  scream: 0.4,
+  lob: 0.15,
+  leap: 0.15,
+  deny: 0.2,
 }
 
 class GameAudio {

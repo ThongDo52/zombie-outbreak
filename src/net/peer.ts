@@ -11,12 +11,19 @@ import { isLossy, type Link } from './transport'
  * unordered one for the fast-changing inputs and snapshots, so one slow packet never holds up the picture.
  */
 
-export type Route = 'direct' | 'relayed' | 'unknown'
+/**
+ * How a friend's traffic reaches the host: straight between the two browsers ('direct'), through a WebRTC
+ * TURN server ('relayed'), or through the game's own WebSocket relay ('relay', see relay.ts).
+ */
+export type Route = 'direct' | 'relayed' | 'relay' | 'unknown'
 
 export interface PeerLink extends Link {
   /** Whether the traffic goes straight between the two browsers or through a relay. */
   route(): Promise<Route>
 }
+
+/** Why joining over WebRTC failed: nobody hosts that code, the room finder is down, or the networks block each other. */
+export type PeerFailure = 'no-room' | 'broker' | 'blocked'
 
 export const peerIdFor = (code: string) => `zombie-outbreak-${code.toUpperCase()}`
 const OPEN_TIMEOUT_MS = 30_000
@@ -145,22 +152,28 @@ export function openHostPeer(code: string, ice: IceConfig, onGuest: (link: PeerL
   })
 }
 
-/** A friend joins the room with this code. Resolves once the reliable channel is open. */
+/**
+ * A friend joins the room with this code. Resolves once the reliable channel is open.
+ * A failure carries a `type` (see PeerFailure) so the caller can fall back to the online relay.
+ */
 export function joinPeer(code: string, ice: IceConfig): Promise<PeerLink> {
   return new Promise((resolve, reject) => {
     const peer = new Peer({ config: { iceServers: ice.iceServers }, debug: 0 })
     let settled = false
-    const fail = (message: string) => {
+    const fail = (type: PeerFailure, message: string) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       peer.destroy()
-      reject(new Error(message))
+      reject(Object.assign(new Error(message), { type }))
     }
-    const timer = setTimeout(() => fail('Could not connect to the host. Either they closed the room, or your two networks cannot reach each other directly and no relay is set up. Try the same Wi-Fi, or ask the host to set up a relay.'), OPEN_TIMEOUT_MS)
+    const timer = setTimeout(
+      () => fail('blocked', 'Could not connect to the host. Either they closed the room, or your two networks cannot reach each other directly and no relay is set up. Try the same Wi-Fi, or ask the host to set up a relay.'),
+      OPEN_TIMEOUT_MS,
+    )
     peer.on('error', (err) => {
-      if (err.type === 'peer-unavailable') fail('No room with that code. Ask the host to check it, and that their game is still open.')
-      else fail('Could not connect to the room finder. Try again in a moment.')
+      if (err.type === 'peer-unavailable') fail('no-room', 'No room with that code. Ask the host to check it, and that their game is still open.')
+      else fail('broker', 'Could not connect to the room finder. Try again in a moment.')
     })
     peer.on('open', () => {
       const sid = randomId()
@@ -173,7 +186,7 @@ export function joinPeer(code: string, ice: IceConfig): Promise<PeerLink> {
       link.attach(state)
       // the browsers gave up finding a path to each other: say so now instead of waiting for the timeout
       control.on('iceStateChanged', (st: RTCIceConnectionState) => {
-        if (st === 'failed') fail('The two networks could not find a path to each other, and no relay is set up. Try the same Wi-Fi, or ask the host to set up a relay.')
+        if (st === 'failed') fail('blocked', 'The two networks could not find a path to each other, and no relay is set up. Try the same Wi-Fi, or ask the host to set up a relay.')
       })
       control.on('open', () => {
         if (settled) return

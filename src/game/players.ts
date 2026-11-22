@@ -1,16 +1,25 @@
 import { aabb, bodyRect, moveBody, normalize } from './collision'
 import { CLASSES, DEFAULT_CLASS, SKILL, type ClassId } from './classes'
-import { CHAPTERS } from './chapters'
 import { fireTesla } from './combat'
-import { BOOST, PLAYER, PUNCH, REVIVE, STATUS, WEAPON_ORDER, WEAPONS, ZOMBIES } from './config'
+import { BOOST, PLAYER, PUNCH, REVIVE, STATUS, WEAPON_ORDER, WEAPONS } from './config'
 import type { Game } from './engine'
 import { hasAmmo } from './pickups'
+import { gunBoost } from './shop'
+import { castSkill } from './skills'
 import { gunLook, tracerColor } from './skins'
 import type { Player, PlayerSlot, Vec, WeaponId } from './types'
 import { activeMap } from './world'
 
+const eachWeapon = <T,>(value: (w: WeaponId) => T): Record<WeaponId, T> => {
+  const out = {} as Record<WeaponId, T>
+  for (const w of WEAPON_ORDER) out[w] = value(w)
+  return out
+}
+
+/** A fresh player of the given class: full health, the class's free sidearm in hand, no coins yet. */
 export function newPlayer(spawn: Vec, cls: ClassId = DEFAULT_CLASS): Player {
-  const maxHp = Math.round(PLAYER.maxHp * CLASSES[cls].hp)
+  const def = CLASSES[cls] ?? CLASSES[DEFAULT_CLASS]
+  const maxHp = Math.round(PLAYER.maxHp * def.hp)
   return {
     x: spawn.x,
     y: spawn.y,
@@ -25,37 +34,37 @@ export function newPlayer(spawn: Vec, cls: ClassId = DEFAULT_CLASS): Player {
     dashTime: 0,
     skillCd: 0,
     skillT: 0,
-    cls: cls,
+    skill2Cd: 0,
+    skill2T: 0,
+    cls: def.id,
     fireCooldown: 0,
     muzzle: 0,
     vx: 0,
     vy: 0,
     mx: 0,
     my: 0,
-    weapon: 'fists',
+    weapon: def.starter,
     armor: 0,
     down: false,
     revive: 0,
-    owned: { fists: true, pistol: false, smg: false, shotgun: false, rifle: false, flamer: false, launcher: false, minigun: false, railgun: false, venom: false, tesla: false, cryo: false },
-    ammo: { fists: 0, pistol: 0, smg: 0, shotgun: 0, rifle: 0, flamer: 0, launcher: 0, minigun: 0, railgun: 0, venom: 0, tesla: 0, cryo: 0 },
+    coins: 0,
+    owned: eachWeapon((w) => w === 'fists' || w === def.starter),
+    ammo: eachWeapon(() => 0),
+    gunLv: eachWeapon(() => 0),
   }
 }
 
-/** Guns you start a chapter with when you did not play the earlier ones in this session. */
-export function giveLoadout(p: Player, chapter: number, unlocked: WeaponId[] = []) {
-  // heavy weapons earned in armory trials come with you everywhere, with one pickup's worth of ammo
+/**
+ * What a player brings into a run besides the free sidearm: the heavy weapons earned in armory trials
+ * (with one pickup's worth of ammo) and a purse of coins for the shop. Guns are bought, not found.
+ */
+export function giveLoadout(p: Player, coins: number, unlocked: WeaponId[] = []) {
   for (const id of unlocked) {
+    if (!WEAPONS[id]) continue
     p.owned[id] = true
     p.ammo[id] = Math.max(p.ammo[id], WEAPONS[id].ammoPickup)
   }
-  if (chapter === 0) return
-  const guns = new Set<WeaponId>(['pistol', 'smg', 'shotgun'])
-  for (let i = 0; i < Math.min(chapter, CHAPTERS.length); i++) guns.add(CHAPTERS[i].newGun)
-  for (const id of guns) {
-    p.owned[id] = true
-    p.ammo[id] = WEAPONS[id].infinite ? 0 : Math.min(WEAPONS[id].maxAmmo, WEAPONS[id].ammoPickup * 2)
-  }
-  p.weapon = 'pistol'
+  p.coins = Math.max(p.coins, coins)
 }
 
 function setState(p: Player, state: Player['state']) {
@@ -71,6 +80,8 @@ export function updateSlot(g: Game, slot: PlayerSlot, dt: number) {
   p.fireCooldown = Math.max(0, p.fireCooldown - dt)
   p.skillCd = Math.max(0, p.skillCd - dt)
   p.skillT = Math.max(0, p.skillT - dt)
+  p.skill2Cd = Math.max(0, (p.skill2Cd ?? 0) - dt)
+  p.skill2T = Math.max(0, (p.skill2T ?? 0) - dt)
   if (p.slow) p.slow = Math.max(0, p.slow - dt)
   p.muzzle = Math.max(0, p.muzzle - dt)
 
@@ -78,6 +89,7 @@ export function updateSlot(g: Game, slot: PlayerSlot, dt: number) {
     updateRevive(g, slot, dt)
     slot.firing = false
     slot.queuedSkill = false
+    slot.queuedSkill2 = false
     return
   }
 
@@ -96,8 +108,11 @@ export function updateSlot(g: Game, slot: PlayerSlot, dt: number) {
     return
   }
 
-  if (slot.queuedSkill && p.skillCd <= 0) castSkill(g, slot, dir)
+  const cls = CLASSES[p.cls]
+  if (slot.queuedSkill && p.skillCd <= 0 && castSkill(g, slot, 1, dir)) p.skillCd = cls.skills[0].cooldown
   slot.queuedSkill = false
+  if (slot.queuedSkill2 && p.skill2Cd <= 0 && p.dashTime <= 0 && castSkill(g, slot, 2, dir)) p.skill2Cd = cls.skills[1].cooldown
+  slot.queuedSkill2 = false
 
   if (p.dashTime > 0) {
     p.dashTime -= dt
@@ -105,61 +120,15 @@ export function updateSlot(g: Game, slot: PlayerSlot, dt: number) {
     return
   }
 
-  const walk = PLAYER.speed * CLASSES[p.cls].speed * (p.slow ? 0.55 : 1) * (WEAPONS[p.weapon].heavy ? STATUS.heavySpeed : 1)
+  // a Sniper holding Deadeye trades footwork for a steady aim
+  const steady = p.cls === 'sniper' && p.skillT > 0 ? SKILL.deadeye.walk : 1
+  const walk = PLAYER.speed * cls.speed * (p.slow ? 0.55 : 1) * (WEAPONS[p.weapon].heavy ? STATUS.heavySpeed : 1) * steady
   moveBody(p, dir.x * walk * dt, dir.y * walk * dt)
   if (slot.firing && p.fireCooldown <= 0) fire(g, slot)
 
   const attacking = p.weapon === 'fists' ? p.fireCooldown > WEAPONS.fists.interval - 0.15 : p.muzzle > 0
   const next: Player['state'] = attacking ? 'attack' : dir.x !== 0 || dir.y !== 0 ? 'move' : 'idle'
   if (next !== p.state) setState(p, next)
-}
-
-/** The class skill on Shift or Space: Runner dashes, Bulwark shields, Striker overdrives, Medic pulses. */
-function castSkill(g: Game, slot: PlayerSlot, dir: Vec) {
-  const p = slot.player
-  const cls = CLASSES[p.cls]
-  p.skillCd = cls.cooldown
-  switch (p.cls) {
-    case 'agile':
-      p.dashTime = PLAYER.dashDuration
-      g.sound('dash', p.x, p.y)
-      p.invuln = Math.max(p.invuln, PLAYER.dashInvuln)
-      p.vx = dir.x !== 0 || dir.y !== 0 ? dir.x : p.aim.x
-      p.vy = dir.x !== 0 || dir.y !== 0 ? dir.y : p.aim.y
-      break
-    case 'tank':
-      p.skillT = cls.duration
-      g.addEffect('ring', p.x, p.y, 0, SKILL.shield.taunt * 0.4, 0.6, cls.color)
-      g.text(p.x, p.y - 34, 'Shield up!', cls.color)
-      g.sound('skill', p.x, p.y, 'tank')
-      g.kick(3, slot.id)
-      break
-    case 'damage':
-      p.skillT = cls.duration
-      p.fireCooldown = 0
-      g.addEffect('ring', p.x, p.y, 0, 90, 0.5, cls.color)
-      g.burst(p.x, p.y, cls.color, 14)
-      g.text(p.x, p.y - 34, 'OVERDRIVE', cls.color)
-      g.sound('skill', p.x, p.y, 'damage')
-      break
-    case 'support': {
-      p.skillT = cls.duration
-      const r = SKILL.pulse.range
-      for (const s of g.slots) {
-        const q = s.player
-        if (q.down || Math.hypot(q.x - p.x, q.y - p.y) > r) continue
-        const gain = s === slot ? q.maxHp * SKILL.pulse.self : SKILL.pulse.heal
-        q.hp = Math.min(q.maxHp, q.hp + gain)
-        q.slow = 0
-        g.text(q.x, q.y - 28, `+${Math.round(gain)}`, '#6EE7A8')
-        g.burst(q.x, q.y, '#6EE7A8', 8)
-      }
-      g.addEffect('ring', p.x, p.y, 0, r * 0.9, 0.7, cls.color)
-      g.addEffect('ring', p.x, p.y, 0, r * 0.5, 0.5, '#6EE7A8')
-      g.sound('skill', p.x, p.y, 'support')
-      break
-    }
-  }
 }
 
 function updateAim(g: Game, slot: PlayerSlot, dir: Vec) {
@@ -213,13 +182,15 @@ export function fire(g: Game, slot: PlayerSlot) {
   const p = slot.player
   const def = WEAPONS[p.weapon]
   const overdrive = p.cls === 'damage' && p.skillT > 0
-  const dmgMul = overdrive ? SKILL.overdrive.damage : 1
+  const deadeye = p.cls === 'sniper' && p.skillT > 0
+  // upgrades from the shop, the Striker's overdrive and the Sniper's deadeye all stack
+  const dmgMul = (overdrive ? SKILL.overdrive.damage : 1) * (deadeye ? SKILL.deadeye.damage : 1) * gunBoost(p, p.weapon)
   p.fireCooldown = def.interval / (overdrive ? SKILL.overdrive.fireRate : 1)
   if (p.weapon === 'fists') {
     const size = PUNCH.reach
     const cx = p.x + p.aim.x * (p.w / 2 + size / 2)
     const cy = p.y + p.aim.y * (p.h / 2 + size / 2)
-    g.addHitbox({ x: cx - size / 2, y: cy - size / 2, w: size, h: size }, 'player', def.damage * dmgMul, def.stun, def.knockback, PUNCH.life, undefined, slot.id)
+    g.addHitbox({ x: cx - size / 2, y: cy - size / 2, w: size, h: size }, 'player', def.damage * dmgMul, def.stun, def.knockback, PUNCH.life, undefined, slot.id, { weapon: 'fists', melee: true })
     setState(p, 'attack')
     g.sound('punch', p.x, p.y)
     return
@@ -240,8 +211,9 @@ export function fire(g: Game, slot: PlayerSlot) {
   }
   const base = Math.atan2(p.aim.y, p.aim.x)
   const look = p.weapon === 'flamer' ? undefined : gunLook(slot.skin.gun)
+  const spread = deadeye ? 0 : def.spread
   for (let i = 0; i < def.pellets; i++) {
-    const a = base + (Math.random() - 0.5) * 2 * def.spread
+    const a = base + (Math.random() - 0.5) * 2 * spread
     const vx = Math.cos(a)
     const vy = Math.sin(a)
     const sx = p.x + vx * (p.w / 2 + def.barrel)
@@ -249,16 +221,18 @@ export function fire(g: Game, slot: PlayerSlot) {
     const speed = def.speed * (0.92 + Math.random() * 0.16)
     g.bullets.push({
       x: sx, y: sy, px: sx, py: sy, vx: vx * speed, vy: vy * speed,
-      damage: def.damage * dmgMul, life: def.life, pierce: def.pierce, knockback: def.knockback, stun: def.stun,
+      damage: def.damage * dmgMul, life: def.life, pierce: def.pierce + (deadeye ? SKILL.deadeye.pierce : 0), knockback: def.knockback, stun: def.stun,
       hitIds: new Set(), color: look ? tracerColor(look, g.time, i * 25) : def.color, weapon: p.weapon, maxLife: def.life, blast: def.blast, status: def.status, cloud: def.cloud,
-      glow: look?.glow, sparkle: look?.sparkle, owner: slot.id,
+      glow: look?.glow || deadeye || undefined, sparkle: look?.sparkle, owner: slot.id,
+      ap: deadeye ? 1 : def.ap, far: p.cls === 'sniper' || undefined, homing: def.homing,
     })
   }
   if (look?.ring && (def.interval > 0.2 || Math.random() < 0.4)) {
     const d = p.w / 2 + def.barrel
     g.addEffect('ring', p.x + p.aim.x * d, p.y + p.aim.y * d, 0, 58, 0.34, tracerColor(look, g.time))
   }
-  g.kick(p.weapon === 'shotgun' || p.weapon === 'railgun' ? 5 : p.weapon === 'launcher' ? 6 : p.weapon === 'flamer' ? 0.6 : 1.5, slot.id)
+  const big = p.weapon === 'shotgun' || p.weapon === 'railgun' || p.weapon === 'sniper'
+  g.kick(big ? 5 : p.weapon === 'launcher' ? 6 : p.weapon === 'flamer' ? 0.6 : 1.5, slot.id)
   g.sound('shot', p.x, p.y, p.weapon)
   if (!hasAmmo(p, p.weapon)) outOfAmmo(g, slot)
 }
@@ -267,7 +241,8 @@ function outOfAmmo(g: Game, slot: PlayerSlot) {
   const p = slot.player
   g.sound('dry', p.x, p.y)
   g.text(p.x, p.y - 24, `${WEAPONS[p.weapon].label} empty`, '#FF7A85')
-  const fallback = WEAPON_ORDER.find((w) => w !== 'fists' && w !== p.weapon && hasAmmo(p, w))
+  // back to another gun that still fires; the free sidearm always does
+  const fallback = [...WEAPON_ORDER].reverse().find((w) => w !== 'fists' && w !== p.weapon && !WEAPONS[w].infinite && hasAmmo(p, w)) ?? WEAPON_ORDER.find((w) => w !== 'fists' && w !== p.weapon && hasAmmo(p, w))
   p.weapon = fallback ?? 'fists'
   p.fireCooldown = 0.25
 }
@@ -275,8 +250,8 @@ function outOfAmmo(g: Game, slot: PlayerSlot) {
 /** Armor soaks damage first. Returns the damage that reached health. */
 export function damagePlayer(g: Game, slot: PlayerSlot, amount: number): number {
   const p = slot.player
-  // the Bulwark's shield soaks most of every hit while it lasts
-  if (p.cls === 'tank' && p.skillT > 0) amount *= SKILL.shield.taken
+  // a Bulwark always takes a little less, and its shield soaks most of every hit while it lasts
+  if (p.cls === 'tank') amount *= p.skillT > 0 ? SKILL.shield.taken : SKILL.ironSkin
   const armor = p.armor ?? 0
   const absorbed = Math.min(armor, amount)
   p.armor = armor - absorbed
@@ -289,6 +264,8 @@ export function damagePlayer(g: Game, slot: PlayerSlot, amount: number): number 
 export function hurtPlayer(g: Game, slot: PlayerSlot, damage: number, knockback: number, cx: number, cy: number, contact: boolean) {
   const p = slot.player
   const k = normalize(p.x - cx, p.y - cy)
+  // a Runner slips most of a glancing touch
+  if (contact && p.cls === 'agile') damage *= SKILL.evasion
   const hpLost = damagePlayer(g, slot, damage)
   g.sound(hpLost > 0 ? 'hurt' : 'armorhit', p.x, p.y)
   p.invuln = contact ? PLAYER.contactInvuln : PLAYER.invulnAfterHit
@@ -408,7 +385,9 @@ export function checkContact(g: Game, slot: PlayerSlot) {
   const body = { x: b.x + 3, y: b.y + 3, w: b.w - 6, h: b.h - 6 }
   for (const z of g.zombies) {
     if (z.hp <= 0 || z.state === 'stunned' || !aabb(body, bodyRect(z))) continue
-    hurtPlayer(g, slot, ZOMBIES[z.kind].contact * g.diff.damage, 0, z.x, z.y, true)
+    const touch = g.contactDamage(z)
+    if (touch <= 0) continue
+    hurtPlayer(g, slot, touch, 0, z.x, z.y, true)
     return
   }
 }

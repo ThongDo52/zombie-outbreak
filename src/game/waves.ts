@@ -3,14 +3,25 @@ import { CHAPTERS, type Chapter } from './chapters'
 import { ZOMBIES } from './config'
 import type { Vec, Zombie, ZombieKind } from './types'
 
-/** Where each new family starts to show up (chapter index, wave) and how common it is. */
+/**
+ * Where each family starts to show up (chapter index, wave) and how common it is.
+ * The first chapter introduces them one at a time; later chapters mix all of them.
+ */
 const FAMILIES: { kind: ZombieKind; chapter: number; wave: number; weight: number }[] = [
   { kind: 'spitter', chapter: 0, wave: 2, weight: 0.07 },
+  { kind: 'shielder', chapter: 0, wave: 2, weight: 0.045 },
   { kind: 'exploder', chapter: 0, wave: 3, weight: 0.06 },
+  { kind: 'leaper', chapter: 0, wave: 3, weight: 0.045 },
   { kind: 'lurker', chapter: 1, wave: 1, weight: 0.06 },
+  { kind: 'brood', chapter: 1, wave: 2, weight: 0.035 },
+  { kind: 'screamer', chapter: 1, wave: 3, weight: 0.028 },
   { kind: 'bloater', chapter: 2, wave: 1, weight: 0.05 },
+  { kind: 'mortar', chapter: 2, wave: 2, weight: 0.035 },
   { kind: 'shaman', chapter: 3, wave: 2, weight: 0.035 },
 ]
+
+/** However many families there are, they never make up more than this share of a wave. */
+const FAMILY_CAP = 0.46
 
 /** The families that can appear in this wave, with their share of the horde. Later chapters and waves have more of them. */
 export function familyWeights(chapterIndex: number, wave: number): [ZombieKind, number][] {
@@ -22,8 +33,8 @@ export function familyWeights(chapterIndex: number, wave: number): [ZombieKind, 
     out.push([f.kind, w])
     total += w
   }
-  // however many families there are, the horde stays mostly the old kinds
-  const scale = total > 0.42 ? 0.42 / total : 1
+  // the horde stays mostly the plain kinds, so the special ones stand out
+  const scale = total > FAMILY_CAP ? FAMILY_CAP / total : 1
   return out.map(([k, w]) => [k, w * scale])
 }
 

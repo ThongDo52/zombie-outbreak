@@ -1,0 +1,25 @@
+# The online relay for Zombie Outbreak as a Cloudflare Worker (free plan is enough).
+#
+#   cd server/cloudflare
+#   npx wrangler login      # once, opens the browser
+#   npx wrangler deploy
+#
+# Wrangler prints the address, for example https://zombie-outbreak-relay.<you>.workers.dev
+# Put it in the game's .env as  VITE_RELAY_URL=wss://zombie-outbreak-relay.<you>.workers.dev/relay  and rebuild.
+
+name = "zombie-outbreak-relay"
+main = "worker.ts"
+compatibility_date = "2025-06-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RelayRoomObject"
+
+# The free plan needs the SQLite-backed kind of Durable Object.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayRoomObject"]
+
+# Optional: only let your own site use the relay (comma separated origins).
+# [vars]
+# ALLOWED_ORIGINS = "https://your-game.example.com"

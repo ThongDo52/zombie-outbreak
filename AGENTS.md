@@ -62,5 +62,22 @@ bun run dev
 - The Arc Studio RPC proxy is read-only: the server sends operator transactions to the public RPC.
 
 ## P2P co-op
-- Story and Survival rooms run in the host browser: src/net/roomCore.ts (room logic), hostWorker.ts / hostRuntime.ts (worker), hostSession.ts (PeerJS glue), peer.ts, ice.ts, ownership.ts (wallet checks shared with server/auth.ts).
-- Endless Descent stays on server/coop.ts. Relay env values (optional): VITE_METERED_APP, VITE_METERED_KEY or VITE_TURN_URL, VITE_TURN_USERNAME, VITE_TURN_CREDENTIAL.
+- Story and Survival rooms run in the host browser: src/net/roomCore.ts (room logic), hostWorker.ts / hostRuntime.ts (worker), hostSession.ts (opens the room on WebRTC and on the online relay), peer.ts, ice.ts, ownership.ts (wallet checks shared with server/auth.ts).
+- Endless Descent stays on server/coop.ts. TURN env values (optional): VITE_METERED_APP, VITE_METERED_KEY or VITE_TURN_URL, VITE_TURN_USERNAME, VITE_TURN_CREDENTIAL.
+
+## Online relay (co-op across networks)
+- Why: WebRTC alone only connected players on the same LAN or on friendly home networks. A guest now races WebRTC against a WebSocket relay (src/net/join.ts, 4 s head start for WebRTC) and the host listens on both (src/net/hostSession.ts).
+- The relay only forwards frames between the host and the guests of one room code; the room, the game and the wallet checks stay in the host's browser. Wire format: src/net/relayProtocol.ts. Browser side: src/net/relay.ts (snapshots are deflated and sent once for all guests).
+- Server side, one room logic for all three hosts: server/relayCore.ts, mounted on the co-op server (server/coop.ts routes /coop and /relay on one port), alone (server/relay-standalone.ts, `bun run relay`, server/Dockerfile.relay), or as a Cloudflare Worker with one Durable Object per room (server/cloudflare, `bun run relay:deploy`; not deploy-tested yet).
+- Where the page finds it: VITE_RELAY_URL (comma list), else derived from VITE_COOP_URL, else same-origin /relay in dev (vite.config.ts proxies /coop and /relay to the co-op server).
+
+## Hosting the page
+- .github/workflows/deploy.yml builds with Vite and publishes to GitHub Pages on every push to main (base path taken from the Pages settings). Repository variables named VITE_* become the build's settings. Pages is static: the relay and the Endless Descent server must run elsewhere (VITE_RELAY_URL, VITE_COOP_URL). Not run yet.
+
+## Classes, coins and the shop
+- Six classes in src/game/classes.ts: Bulwark (tank), Striker (damage), Runner (agile), Medic (support), Deadshot (sniper), Warlock (summoner). Each has a passive, two skills (src/game/skills.ts; Shift/Space and E/right mouse), a free starter gun and a shop shelf. Pets (wolves, golem) are in src/game/pets.ts and drawn by petart.ts.
+- Guns are no longer found on the ground. Zombies pay coins (ZOMBIES[kind].coins), shared across a co-op squad; src/game/shop.ts holds prices, upgrades (3 levels, +25% damage each), ammo and medkits, the starting purse for later chapters, and buyItem. B opens the shop (src/game/shopui.ts draws it on the canvas); solo play pauses while it is open.
+- New zombie kinds: shielder, leaper, screamer, brood (splits into mites), mortar. Wave make-up is in src/game/waves.ts.
+- The last four zombies of a wave stop keeping their distance after 12 s (Game.hunt), so waves cannot drag on.
+- Cosmetic-only code (particles, lights, flying coins, decals) lives in src/game/visuals.ts and never affects the simulation.
+- A co-op guest's input may carry skill2 and buy; src/net/input.ts validates it for both the browser-hosted room and server/coop.ts.

@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "coop": "bun run ./server/coop.ts",
+    "relay": "bun run ./server/relay-standalone.ts",
+    "relay:deploy": "cd server/cloudflare && bunx wrangler deploy",
     "deploy:self": "bun run ./scripts/self-deploy.ts",
     "compass:deploy": "bun run ./scripts/compass-deploy.ts",
     "fetch:abi": "bun run ./scripts/fetch-abi.ts",

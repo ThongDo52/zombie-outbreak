@@ -6,6 +6,7 @@ import { CLASSES, type ClassId } from '@/game/classes'
 import { HEAVY_WEAPONS, VIEW_H, VIEW_W } from '@/game/config'
 import type { Game } from '@/game/engine'
 import { draw } from '@/game/render'
+import { shopHit, shopKey } from '@/game/shopui'
 import { useAccount } from 'wagmi'
 import type { Difficulty } from '@/game/difficulty'
 import { clearRun, getGame, loadArmory, loadClass, saveClass, loadProgress, loadRecords, loadRun, markCleared, saveRun, storyKey, submitRecord, survivalKey, trialKey, unlockWeapon, type Progress, type RecordResult, type Records } from '@/game/save'
@@ -42,6 +43,13 @@ function loadBest(): number {
  */
 /** Keys for the n-th weapon you hold. */
 const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal']
+/** While the shop is open the same keys buy its lines instead. */
+const SHOP_KEY_OF: Record<string, string> = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9', Digit0: '0', Minus: '-' }
+
+/** Buy a line of the shop; a line that cannot be bought answers with a dull buzz. */
+function buyFromShop(game: Game, item: string | undefined) {
+  if (item && !game.buy(item)) game.onSound?.({ type: 'deny' })
+}
 
 export function GameCanvas({ coop, testAll = false }: { coop: CoopHandle; testAll?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -171,11 +179,24 @@ export function GameCanvas({ coop, testAll = false }: { coop: CoopHandle; testAl
 
     const onKey = (down: boolean) => (ev: KeyboardEvent) => {
       const control = KEY_MAP[ev.code]
-      const isDash = ev.code === 'ShiftLeft' || ev.code === 'ShiftRight' || ev.code === 'Space'
-      if (game.status === 'playing' && (control || isDash)) ev.preventDefault()
+      const isSkill = ev.code === 'ShiftLeft' || ev.code === 'ShiftRight' || ev.code === 'Space'
+      const isSkill2 = ev.code === 'KeyE'
+      const isShop = ev.code === 'KeyB'
+      if (game.status === 'playing' && (control || isSkill || isSkill2 || isShop)) ev.preventDefault()
       if (control) game.setKey(control, down)
       if (!down || ev.repeat) return
-      if (isDash) game.queueSkill()
+      if (isShop) {
+        game.setShop(!game.shopOpen)
+        return
+      }
+      if (game.shopOpen) {
+        // the shop has the keyboard: numbers buy, Escape closes, everything else waits
+        if (ev.code === 'Escape') game.setShop(false)
+        else if (SHOP_KEY_OF[ev.code]) buyFromShop(game, shopKey(game.player, SHOP_KEY_OF[ev.code]))
+        return
+      }
+      if (isSkill) game.queueSkill()
+      if (isSkill2) game.queueSkill(game.localId, 2)
       if (ev.code === 'KeyQ') game.cycleWeapon()
       if (ev.code === 'KeyF') game.useHeal()
       if (ev.code === 'KeyG') game.useArmor()
@@ -266,13 +287,33 @@ export function GameCanvas({ coop, testAll = false }: { coop: CoopHandle; testAl
 
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const g = gameRef.current
-    if (!g || ev.button !== 0 || ev.pointerType === 'touch') return
+    if (!g) return
+    if (g.shopOpen) {
+      // a click or a tap on the shop: buy the line under it, or close when it lands outside
+      const r = ev.currentTarget.getBoundingClientRect()
+      const x = ((ev.clientX - r.left) / r.width) * VIEW_W
+      const y = ((ev.clientY - r.top) / r.height) * VIEW_H
+      if (ev.pointerType !== 'touch') g.aimScreen = { x, y }
+      const hit = shopHit(g.player, x, y)
+      if (hit === 'close' || hit === 'outside') g.setShop(false)
+      else if (hit !== 'panel') buyFromShop(g, hit.buy)
+      return
+    }
+    if (ev.pointerType === 'touch') return
+    if (ev.button === 2) {
+      // right mouse button: the second class skill, aimed where the pointer is
+      onPointerMove(ev)
+      g.queueSkill(g.localId, 2)
+      return
+    }
+    if (ev.button !== 0) return
     onPointerMove(ev)
     g.firing = true
   }
 
   const onWheel = (ev: React.WheelEvent<HTMLCanvasElement>) => {
-    if (ev.deltaY !== 0) gameRef.current?.cycleWeapon()
+    const g = gameRef.current
+    if (ev.deltaY !== 0 && g && !g.shopOpen) g.cycleWeapon()
   }
 
   const toggleDebug = () => {
@@ -361,8 +402,20 @@ export function GameCanvas({ coop, testAll = false }: { coop: CoopHandle; testAl
           g.autoAim = true
           g.firing = down
         }}
-        skillLabel={CLASSES[cls].skill}
+        skillLabel={CLASSES[cls].skills[0].name}
         onSkill={() => gameRef.current?.queueSkill()}
+        skill2Label={CLASSES[cls].skills[1].name}
+        onSkill2={() => {
+          const g = gameRef.current
+          if (!g) return
+          // touch has no pointer to aim with: the skill goes where auto-aim is looking
+          g.autoAim = true
+          g.queueSkill(g.localId, 2)
+        }}
+        onShop={() => {
+          const g = gameRef.current
+          if (g) g.setShop(!g.shopOpen)
+        }}
         onSwitch={() => gameRef.current?.cycleWeapon()}
         onHeal={() => gameRef.current?.useHeal()}
         onArmor={() => gameRef.current?.useArmor()}
@@ -370,7 +423,7 @@ export function GameCanvas({ coop, testAll = false }: { coop: CoopHandle; testAl
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-slate-400">
         <p className="hidden md:block">
-          {[['WASD', 'move'], ['Mouse', 'aim and fire'], ['1-9 · Q · wheel', 'weapon'], ['Shift · Space', 'class skill'], ['F', 'heal'], ['G', 'armor']].map(([k, l]) => (
+          {[['WASD', 'move'], ['Mouse', 'aim and fire'], ['1-9 · Q · wheel', 'weapon'], ['Shift · Space', 'skill 1'], ['E · right click', 'skill 2'], ['B', 'shop'], ['F', 'heal'], ['G', 'armor']].map(([k, l]) => (
             <span key={k} className="mr-3 inline-flex items-center gap-1.5">
               <kbd className="rounded-md border-b-2 border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] font-bold text-white">{k}</kbd> {l}
             </span>

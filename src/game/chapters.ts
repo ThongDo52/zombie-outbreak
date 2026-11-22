@@ -36,10 +36,6 @@ export interface Chapter {
   bossWaves: number[]
   /** Base zombie count for the chapter. */
   count: number
-  /** Gun placed right next to the start so it is the first thing you find. */
-  newGun: WeaponId
-  /** Guns that can show up as loot in this chapter. */
-  loot: WeaponId[]
   boss: { name: string; flesh: string; aura: string }
   theme: Theme
   obstacles: Rect[]
@@ -58,14 +54,12 @@ const toxic = (x: number, y: number, w: number, h: number): Hazard => ({ x, y, w
 const SUBURB: Chapter = {
   id: 1,
   name: 'Dead Suburb',
-  subtitle: 'The outbreak starts here. Find a gun and hold the street.',
+  subtitle: 'The outbreak starts here. Earn coins, buy a gun and hold the street.',
   world: { w: 2400, h: 1500 },
   spawn: { x: 1200, y: 750 },
   waves: 4,
   bossWaves: [4],
   count: 14,
-  newGun: 'pistol',
-  loot: ['pistol', 'smg', 'shotgun'],
   boss: { name: 'BRUTE KING', flesh: '#85606A', aura: '150,40,90' },
   theme: {
     ground: '#26302B', patch: 'rgba(94,140,74,0.28)', patchKind: 'grass',
@@ -92,14 +86,12 @@ const SUBURB: Chapter = {
 const OUTPOST: Chapter = {
   id: 2,
   name: 'Frozen Outpost',
-  subtitle: 'A blizzard hides the horde. A walled compound holds the rifle.',
+  subtitle: 'A blizzard hides the horde. Hold the walled compound.',
   world: { w: 2800, h: 1700 },
   spawn: { x: 1400, y: 850 },
   waves: 5,
   bossWaves: [3, 5],
   count: 18,
-  newGun: 'rifle',
-  loot: ['smg', 'shotgun', 'rifle'],
   boss: { name: 'FROST WARDEN', flesh: '#7C9DB5', aura: '90,170,255' },
   theme: {
     ground: '#7F94A8', patch: 'rgba(255,255,255,0.32)', patchKind: 'snow',
@@ -130,14 +122,12 @@ const OUTPOST: Chapter = {
 const WASTELAND: Chapter = {
   id: 3,
   name: 'Toxic Wasteland',
-  subtitle: 'Acid pools eat through boots. The flamethrower burns the horde.',
+  subtitle: 'Acid pools eat through boots, and mortars shell you from behind the horde.',
   world: { w: 3000, h: 1800 },
   spawn: { x: 1500, y: 900 },
   waves: 6,
   bossWaves: [3, 6],
   count: 22,
-  newGun: 'flamer',
-  loot: ['smg', 'shotgun', 'rifle', 'flamer'],
   boss: { name: 'TOXIC BEHEMOTH', flesh: '#6F8B3E', aura: '130,255,60' },
   theme: {
     ground: '#2B2B20', patch: 'rgba(150,200,60,0.22)', patchKind: 'toxic',
@@ -166,14 +156,12 @@ const WASTELAND: Chapter = {
 const RUINS: Chapter = {
   id: 4,
   name: 'Hellfire Ruins',
-  subtitle: 'Lava rivers split the city. The grenade launcher is your last hope.',
+  subtitle: 'Lava rivers split the city. Shamans shield the horde: break them first.',
   world: { w: 3200, h: 2000 },
   spawn: { x: 1600, y: 1000 },
   waves: 7,
   bossWaves: [4, 7],
   count: 26,
-  newGun: 'launcher',
-  loot: ['shotgun', 'rifle', 'flamer', 'launcher'],
   boss: { name: 'HELLFIRE TYRANT', flesh: '#A5442C', aura: '255,90,30' },
   theme: {
     ground: '#2A1D1D', patch: 'rgba(255,90,40,0.16)', patchKind: 'ash',

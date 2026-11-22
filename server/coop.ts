@@ -4,12 +4,12 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { type Address, type Hex, getAddress } from 'viem'
 import { CHAPTERS } from '../src/game/chapters'
 import { DEFAULT_CLASS, isClassId, type ClassId } from '../src/game/classes'
-import { WEAPON_ORDER } from '../src/game/config'
 import { DIFFICULTIES, type Difficulty } from '../src/game/difficulty'
 import { Game } from '../src/game/engine'
 import { makeSnapshot } from '../src/game/replica'
 import type { SkinSelection } from '../src/game/skins'
-import type { BoostCharges, GameStatus, PlayerInput, WeaponId } from '../src/game/types'
+import type { BoostCharges, GameStatus, WeaponId } from '../src/game/types'
+import { validInput } from '../src/net/input'
 import {
   CODE_ALPHABET,
   CODE_LENGTH,
@@ -26,8 +26,10 @@ import {
   type RoomState,
   type ServerMessage,
 } from '../src/net/protocol'
+import { DEFAULT_RELAY_LIMITS } from '../src/net/relayProtocol'
 import { verifyJoin, type Verified } from './auth'
 import { cancelOnChain, descentReady, newRunId, readEntryFee, readPaid, readRunState, RUN_STATE, settleOnChain, signTicket } from './descent'
+import { createRelay, isRelayRequest } from './relay'
 
 /**
  * Co-op game server. Each room runs the same game engine as solo play, headless, and streams the
@@ -416,16 +418,6 @@ function addMember(room: Room, conn: Conn): Member | null {
 
 const isHost = (conn: Conn) => Boolean(conn.room && conn.member && conn.room.hostId === conn.member.id)
 
-function validInput(m: Record<string, unknown>): PlayerInput | null {
-  const keys = m.keys
-  const ax = m.ax
-  const ay = m.ay
-  if (typeof keys !== 'number' || keys < 0 || keys > 15 || typeof ax !== 'number' || typeof ay !== 'number') return null
-  if (!Number.isFinite(ax) || !Number.isFinite(ay) || Math.abs(ax) > 20000 || Math.abs(ay) > 20000) return null
-  const weapon = typeof m.weapon === 'string' && (WEAPON_ORDER as string[]).includes(m.weapon) ? (m.weapon as PlayerInput['weapon']) : undefined
-  return { keys: keys | 0, fire: m.fire === true, ax, ay, skill: m.skill === true, weapon, heal: m.heal === true, armor: m.armor === true }
-}
-
 async function onMessage(conn: Conn, raw: string) {
   let msg: ClientMessage
   try {
@@ -613,19 +605,36 @@ async function onMessage(conn: Conn, raw: string) {
 
 // ---------- Network ----------
 
+// The online relay shares this server: friends whose networks cannot connect directly (WebRTC) meet here
+// instead, while the host's browser still runs the match. See server/relay.ts.
+const relay = createRelay()
+
 const http = createServer((req, res) => {
+  if (relay.health(req, res)) return
   if (req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: [...conns.values()].filter((c) => c.member).length }))
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: [...conns.values()].filter((c) => c.member).length, relay: relay.hub.stats() }))
     return
   }
   res.writeHead(404)
   res.end()
 })
 
-const wss = new WebSocketServer({ server: http, path: COOP_PATH, maxPayload: 4096 })
+/** Largest message a co-op client may send. Relay frames (snapshots from a host) are allowed to be bigger. */
+const MAX_COOP_MESSAGE = 4096
 
-wss.on('connection', (ws) => {
+// One WebSocket server for both endpoints: two servers on one port would refuse each other's handshakes.
+const wss = new WebSocketServer({ server: http, maxPayload: DEFAULT_RELAY_LIMITS.maxHostFrame })
+
+wss.on('connection', (ws, req) => {
+  if (isRelayRequest(req)) {
+    relay.connect(ws, req)
+    return
+  }
+  if ((req.url ?? '').split('?')[0].replace(/\/+$/, '') !== COOP_PATH) {
+    ws.close(4009, 'unknown path')
+    return
+  }
   const conn: Conn = { ws, nonce: randomBytes(16).toString('hex'), windowStart: Date.now(), count: 0 }
   conns.set(ws, conn)
   send(ws, { t: 'challenge', nonce: conn.nonce, message: signInMessage(conn.nonce) })
@@ -636,7 +645,9 @@ wss.on('connection', (ws) => {
       conn.count = 0
     }
     if (++conn.count > 120) return // flood protection
-    void onMessage(conn, data.toString()).catch((err) => console.error('message failed', err))
+    const text = data.toString()
+    if (text.length > MAX_COOP_MESSAGE) return
+    void onMessage(conn, text).catch((err) => console.error('message failed', err))
   })
   ws.on('close', () => {
     leaveRoom(conn, false)
@@ -645,10 +656,11 @@ wss.on('connection', (ws) => {
   ws.on('error', () => ws.close())
 })
 
-http.listen(PORT, () => console.log(`coop server listening on ${PORT}`))
+http.listen(PORT, () => console.log(`coop server listening on ${PORT} (co-op on ${COOP_PATH}, online relay on /relay)`))
 
 const stop = () => {
   for (const room of rooms.values()) stopGame(room)
+  relay.close()
   http.close()
   process.exit(0)
 }
